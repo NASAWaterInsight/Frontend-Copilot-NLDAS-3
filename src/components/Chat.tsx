@@ -34,13 +34,22 @@ export default function Chat() {
     try {
       const resp = await callMultiAgentFunction({ action: 'generate', data: { query: userMsg.text } })
       const r = resp.response
-      const url = r?.analysis_data?.result ?? r?.content
+      
+      // Extract image URL from analysis_data.result or content
+      const imageUrl = r?.analysis_data?.result || null
+      
+      // Clean the content text to remove URLs
+      let cleanContent = r?.content || ''
+      if (cleanContent && imageUrl) {
+        // Remove the URL from the content text
+        cleanContent = cleanContent.replace(/https?:\/\/[^\s]+/g, '').replace(/Result:\s*$/, '').trim()
+      }
 
       const assistantMsg: Message = {
         id: String(Date.now() + 1),
         role: 'assistant',
-        text: typeof r?.content === 'string' ? r.content : undefined,
-        imageUrl: typeof url === 'string' ? url : undefined,
+        text: cleanContent || 'Analysis completed.',
+        imageUrl: imageUrl,
       }
 
       setMessages((prev) => [...prev, assistantMsg])
