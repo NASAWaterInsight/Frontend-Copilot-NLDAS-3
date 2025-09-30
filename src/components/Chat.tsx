@@ -35,15 +35,26 @@ export default function Chat() {
       const resp = await callMultiAgentFunction({ action: 'generate', data: { query: userMsg.text } })
       const r = resp.response
       
-      // Extract image URL from analysis_data.result or content
-      const imageUrl = r?.analysis_data?.result || null
+      // Extract image URL from multiple possible locations
+      let imageUrl = r?.analysis_data?.result?.map_url || null
       
-      // Clean the content text to remove URLs
-      let cleanContent = r?.content || ''
-      if (cleanContent && imageUrl) {
-        // Remove the URL from the content text
-        cleanContent = cleanContent.replace(/https?:\/\/[^\s]+/g, '').replace(/Result:\s*$/, '').trim()
+      // Check if the result field directly contains a URL (your current backend format)
+      if (!imageUrl && r?.result && typeof r.result === 'string' && r.result.startsWith('http')) {
+        imageUrl = r.result
       }
+      
+      // Fallback: extract URL from content if not in proper structure
+      if (!imageUrl && r?.content) {
+        const urlMatch = r.content.match(/https?:\/\/[^\s]+/)
+        imageUrl = urlMatch ? urlMatch[0] : null
+      }
+      
+      // Clean the content text to remove URLs and unwanted patterns
+      let cleanContent = r?.content || ''
+      // Always clean URLs if they exist
+      cleanContent = cleanContent.replace(/https?:\/\/[^\s]+/g, '').replace(/Result:\s*$/, '').trim()
+      // Remove common prefixes that might be added by the backend
+      cleanContent = cleanContent.replace(/^(Temperature map created:|Analysis completed[\.!]*\s*Result:\s*)/i, '').trim()
 
       const assistantMsg: Message = {
         id: String(Date.now() + 1),
@@ -90,7 +101,16 @@ export default function Chat() {
                   <div className="mt-3">
                     <img src={m.imageUrl} alt="visualization" className="w-full rounded-md border" />
                     <div className="mt-2 text-sm text-gray-500">
-                      <a href={m.imageUrl} target="_blank" rel="noreferrer" className="underline">Open image</a>
+                      <a 
+                        href={m.imageUrl} 
+                        download="visualization.png"
+                        className="inline-flex items-center gap-1 underline hover:text-gray-700"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        Download
+                      </a>
                     </div>
                   </div>
                 )}

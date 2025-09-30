@@ -6,6 +6,11 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
+      '/multi_agent_function': {
+        target: 'http://localhost:7071',
+        changeOrigin: true,
+        secure: false
+      },
       '/api': {
         target: 'http://localhost:7071',
         changeOrigin: true,
