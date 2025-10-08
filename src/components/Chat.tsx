@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { callMultiAgentFunction } from '../api/multiAgent'
+import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch'
 
 type Role = 'user' | 'assistant'
 type Message = {
@@ -95,20 +96,68 @@ export default function Chat() {
 
           {messages.map((m) => (
             <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[75%] ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-xl rounded-tr-none' : 'bg-white text-gray-900 rounded-xl rounded-tl-none shadow'} p-4` }>
+              <div className={`max-w-[75%] ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-xl rounded-tr-none' : 'bg-white text-gray-900 rounded-xl rounded-tl-none shadow'} p-4`}>
                 {m.text && <div className="whitespace-pre-wrap">{m.text}</div>}
                 {m.imageUrl && (
                   <div className="mt-3">
-                    <img src={m.imageUrl} alt="visualization" className="w-full rounded-md border" />
-                    <div className="mt-2 text-sm text-gray-500">
-                      <a 
-                        href={m.imageUrl} 
-                        download="visualization.png"
-                        className="inline-flex items-center gap-1 underline hover:text-gray-700"
+                    <div className="border rounded-md overflow-hidden bg-white" style={{ height: '400px' }}>
+                      <TransformWrapper
+                        initialScale={1}
+                        minScale={0.5}
+                        maxScale={4}
+                        centerOnInit={true}
+                        wheel={{ step: 0.1 }}
+                        pinch={{ step: 5 }}
+                        doubleClick={{ mode: 'toggle', step: 0.7 }}
                       >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
+                        {({ zoomIn, zoomOut, resetTransform }) => (
+                          <>
+                            {/* Zoom Controls */}
+                            <div className="absolute top-2 left-2 z-10 flex gap-1">
+                              <button
+                                onClick={() => zoomIn()}
+                                className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm"
+                                title="Zoom In"
+                              >
+                                +
+                              </button>
+                              <button
+                                onClick={() => zoomOut()}
+                                className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm"
+                                title="Zoom Out"
+                              >
+                                −
+                              </button>
+                              <button
+                                onClick={() => resetTransform()}
+                                className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm"
+                                title="Reset"
+                              >
+                                ⌂
+                              </button>
+                            </div>
+                            <TransformComponent
+                              wrapperStyle={{ width: '100%', height: '100%' }}
+                              contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            >
+                              <img 
+                                src={m.imageUrl} 
+                                alt="visualization" 
+                                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                                draggable={false}
+                              />
+                            </TransformComponent>
+                          </>
+                        )}
+                      </TransformWrapper>
+                    </div>
+                    <div className="mt-2 text-sm text-gray-500 flex justify-between items-center">
+                      <span className="text-xs">💡 Scroll to zoom, drag to pan, double-click to toggle zoom</span>
+                      <a 
+                        href={m.imageUrl}
+                        download="visualization.png"
+                        className="text-indigo-600 hover:text-indigo-800 text-xs"
+                      >
                         Download
                       </a>
                     </div>
@@ -117,34 +166,35 @@ export default function Chat() {
               </div>
             </div>
           ))}
-
           <div ref={endRef} />
         </div>
 
         {/* Input area */}
-        <form onSubmit={handleSubmit} className="p-4 border-t bg-white flex items-center gap-3">
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Ask for a map, e.g. max temperature Indiana Jan 1 2023"
-            className="flex-1 rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-            disabled={loading}
-          />
-          <button
-            type="submit"
-            disabled={loading}
-            className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm hover:bg-indigo-700 disabled:opacity-60"
-          >
-            {loading ? 'Generating...' : 'Send'}
-          </button>
+        <form onSubmit={handleSubmit} className="p-4 border-t bg-white">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Ask about hydrology data..."
+              className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              disabled={loading}
+            />
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {loading ? 'Processing...' : 'Send'}
+            </button>
+          </div>
+          {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
         </form>
 
-        {error && <div className="p-3 text-red-600">Error: {error}</div>}
-
         {debug && (
-          <details className="p-4 text-xs text-gray-600 border-t">
-            <summary className="cursor-pointer">Debug info</summary>
-            <pre className="mt-2 whitespace-pre-wrap text-xs">{JSON.stringify(debug, null, 2)}</pre>
+          <details className="p-4 border-t bg-gray-50">
+            <summary className="cursor-pointer text-sm text-gray-600">Debug Info</summary>
+            <pre className="mt-2 text-xs overflow-auto">{JSON.stringify(debug, null, 2)}</pre>
           </details>
         )}
       </div>
