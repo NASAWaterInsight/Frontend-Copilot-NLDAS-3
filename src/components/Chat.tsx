@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { callMultiAgentFunction } from '../api/multiAgent'
+import { callMultiAgentFunction } from '../services/multiAgent'
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch'
 import AzureMapView from './AzureMapView'
 import type { Message, MapData } from '../types'
@@ -7,6 +7,14 @@ import type { Message, MapData } from '../types'
 // Get Azure Maps credentials from environment variables
 const AZURE_MAPS_KEY = import.meta.env.VITE_AZURE_MAPS_SUBSCRIPTION_KEY
 const AZURE_MAPS_CLIENT_ID = import.meta.env.VITE_AZURE_MAPS_CLIENT_ID
+
+// Add debug logging
+console.log('=== ENVIRONMENT VARIABLES DEBUG ===')
+console.log('AZURE_MAPS_KEY loaded:', !!AZURE_MAPS_KEY)
+console.log('AZURE_MAPS_KEY value:', AZURE_MAPS_KEY ? `${AZURE_MAPS_KEY.substring(0, 10)}...` : 'NOT FOUND')
+console.log('AZURE_MAPS_CLIENT_ID loaded:', !!AZURE_MAPS_CLIENT_ID)
+console.log('API_BASE_URL:', import.meta.env.VITE_API_BASE_URL)
+console.log('=== END ENV DEBUG ===')
 
 export default function Chat() {
   const [query, setQuery] = useState('')
@@ -262,7 +270,7 @@ export default function Chat() {
         console.log('❌ Not detected as Azure Maps - processing as regular response')
         // Regular PNG image response - existing logic
         imageUrl = r?.analysis_data?.result?.map_url || null
-        
+        // Check if the result field directly contains a URL (your current backend format)
         // Check if the result field directly contains a URL (your current backend format)
         if (!imageUrl && r?.result && typeof r.result === 'string' && r.result.startsWith('http')) {
           imageUrl = r.result
@@ -336,8 +344,8 @@ export default function Chat() {
                 <div className={`max-w-[85%] ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-xl rounded-tr-none' : 'bg-white text-gray-900 rounded-xl rounded-tl-none shadow'} p-4`}>
                   {m.text && <div className="whitespace-pre-wrap">{m.text}</div>}
                   
-                  {/* Interactive Azure Map - Only when mapData exists and has azureData */}
-                  {m.mapData?.azureData && AZURE_MAPS_KEY && (
+                  {/* Interactive Azure Map - Only when mapData exists and has azureData AND valid Azure Maps key */}
+                  {m.mapData?.azureData && AZURE_MAPS_KEY && AZURE_MAPS_KEY !== 'your_actual_azure_maps_key_here' && (
                     <div className="mt-3">
                       <AzureMapView 
                         mapData={m.mapData} 
@@ -352,8 +360,8 @@ export default function Chat() {
                     </div>
                   )}
 
-                  {/* Static PNG with zoom/pan - Default behavior */}
-                  {m.imageUrl && !m.mapData?.azureData && (
+                  {/* Fallback: Show static image if no valid Azure Maps key or if it's a regular response */}
+                  {((m.imageUrl && !m.mapData?.azureData) || (m.mapData?.azureData && (!AZURE_MAPS_KEY || AZURE_MAPS_KEY === 'your_actual_azure_maps_key_here'))) && (
                     <div className="mt-3">
                       <div className="border rounded-md overflow-hidden bg-white" style={{ height: '500px' }}>
                         <TransformWrapper
