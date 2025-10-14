@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { callMultiAgentFunction } from '../services/multiAgent'
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch'
 import AzureMapView from './AzureMapView'
+import { getStableUserId, clearUserId, getCurrentUserId } from '../utils/userIdentity'
 import type { Message, MapData } from '../types'
 
 // Get Azure Maps credentials from environment variables
@@ -22,11 +23,33 @@ export default function Chat() {
   const [error, setError] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [debug, setDebug] = useState<any>(null)
+  const [userId, setUserId] = useState<string>('')
   const endRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Initialize user ID on component mount
+  useEffect(() => {
+    const initUser = async () => {
+      const id = await getStableUserId()
+      setUserId(id)
+      console.log('Chat initialized for user:', id.substring(0, 8) + '...')
+    }
+    initUser()
+  }, [])
+
+  // Handle new conversation
+  const handleNewConversation = () => {
+    clearUserId()
+    // Generate new user ID on next request
+    setUserId('')
+    setMessages([])
+    setError(null)
+    setDebug(null)
+    console.log('🔄 Cleared user ID for fresh conversation')
+  }
 
   // Function to determine map bounds based on query
   function getMapBounds(query: string): MapData['bounds'] {
@@ -119,172 +142,124 @@ export default function Chat() {
       
       const r = resp.response
       
-      console.log('=== AZURE MAPS DEBUG ===')
-      console.log('Backend response:', r)
+      console.log('=== UNIFIED BACKEND STRUCTURE DEBUG ===')
       console.log('Response status:', r?.status)
-      console.log('Response data_type:', r?.data_type)
+      console.log('Has static_url:', !!r?.static_url)
+      console.log('Has overlay_url:', !!r?.overlay_url)
+      console.log('Has geojson:', !!r?.geojson)
+      console.log('Has temperature_data:', !!r?.temperature_data)
       console.log('Has map_config:', !!r?.map_config)
-      console.log('Map config keys:', r?.map_config ? Object.keys(r.map_config) : 'none')
-      console.log('Has data_points:', !!r?.map_config?.data_points)
-      console.log('Data points length:', r?.map_config?.data_points?.length || 0)
-      console.log('Current query:', currentQuery)
-      console.log('Is Azure Maps query:', currentQuery.toLowerCase().includes('azure maps'))
-      
-      // NEW: Check for overlay_url in the response
-      console.log('=== URL DETECTION DEBUG ===')
-      console.log('r.overlay_url:', r?.overlay_url)
-      console.log('r.result (type):', typeof r?.result, r?.result)
-      console.log('r.content:', r?.content)
-      console.log('Full response structure:', JSON.stringify(r, null, 2))
-      console.log('=== END URL DEBUG ===')
-      console.log('=== END DEBUG ===')
-
-      console.log('=== BACKEND STRUCTURE CHECK ===')
-      console.log('Does r.overlay_url exist?', !!r?.overlay_url)
-      console.log('r.overlay_url value:', r?.overlay_url)
-      console.log('Does r.map_config exist?', !!r?.map_config)
-      console.log('Does r.weather_data exist?', !!r?.weather_data)
-      console.log('r.data_type:', r?.data_type)
-      
-      // Check if your backend matches the expected structure
-      const expectedStructure = {
-        hasOverlayUrl: !!r?.overlay_url,
-        hasMapConfig: !!r?.map_config,
-        hasDataPoints: !!r?.map_config?.data_points,
-        hasWeatherData: !!r?.weather_data,
-        isAzureMapsType: r?.data_type === 'azure_maps_interactive'
-      }
-      console.log('Backend structure check:', expectedStructure)
-      console.log('=== END BACKEND CHECK ===')
+      console.log('Has bounds:', !!r?.bounds)
+      console.log('Temperature data count:', r?.temperature_data?.length || 0)
+      console.log('GeoJSON features count:', r?.geojson?.features?.length || 0)
+      console.log('Map config:', r?.map_config)
+      console.log('=== END UNIFIED DEBUG ===')
       
       let imageUrl = null
       let mapData: MapData | undefined
       let cleanContent = r?.content || ''
 
-      // Enhanced Azure Maps detection - check for map_config with data_points
-      const isAzureMapsQuery = currentQuery.toLowerCase().includes('azure maps')
-      const hasAzureMapsData = r?.map_config && r?.map_config?.data_points && r?.map_config.data_points.length > 0
+      // Check for new unified backend structure
+      const hasStaticUrl = !!r?.static_url
+      const hasOverlayUrl = !!r?.overlay_url
+      const hasTemperatureData = !!r?.temperature_data && r.temperature_data.length > 0
+      const hasGeoJsonData = !!r?.geojson?.features && r.geojson.features.length > 0
+      const hasBounds = !!r?.bounds
+      const hasMapConfig = !!r?.map_config
 
-      console.log('Azure Maps detection result:', hasAzureMapsData)
+      console.log('Unified backend features:', { 
+        hasStaticUrl, hasOverlayUrl, hasTemperatureData, 
+        hasGeoJsonData, hasBounds, hasMapConfig 
+      })
 
-      if (hasAzureMapsData) {
-        console.log('✅ Processing as Azure Maps response')
-        console.log('Map config:', r.map_config)
-        console.log('Data points count:', r.map_config.data_points.length)
+      if (hasStaticUrl || hasOverlayUrl) {
+        console.log('✅ Processing unified backend format')
         
-        // Extract map configuration from backend response
-        const bounds = getMapBounds(currentQuery)
+        // Use backend-provided bounds or calculate from temperature_data
+        let mapBounds = r.bounds
+        let mapCenter = r.map_config?.center
         
-        // Use backend center if available, otherwise calculate from bounds
-        const backendCenter = r.map_config.center
-        const center = backendCenter ? {
-          lat: backendCenter[1], // Azure Maps uses [lng, lat]
-          lng: backendCenter[0]
-        } : {
-          lat: (bounds.north + bounds.south) / 2,
-          lng: (bounds.east + bounds.west) / 2
-        }
-        
-        console.log('Calculated center:', center)
-        console.log('Using bounds:', bounds)
-        
-        // IMPORTANT: Also look for overlay_url from your new backend structure
-        let overlayImageUrl = null
-        
-        // Check for the new backend structure with overlay_url
-        if (r?.overlay_url && r.overlay_url.startsWith('http')) {
-          overlayImageUrl = r.overlay_url
-        }
-        // Fallback: Check if backend returned a regular image URL in result field
-        else if (r?.result && typeof r.result === 'string' && r.result.startsWith('http')) {
-          overlayImageUrl = r.result
-        } 
-        // Final fallback: extract URL from content
-        else if (r?.content) {
-          const urlMatch = r.content.match(/https?:\/\/[^\s]+/)
-          overlayImageUrl = urlMatch ? urlMatch[0] : null
-        }
-        
-        console.log('Found overlay image URL:', overlayImageUrl)
-        console.log('Response overlay_url field:', r?.overlay_url)
-        console.log('Response result field:', r?.result)
-        
-        // Calculate precise bounds from weather_data arrays
-        const weatherData = r.weather_data
-        let calculatedBounds = bounds // fallback
-        
-        if (weatherData && weatherData.longitude && weatherData.latitude) {
-          calculatedBounds = {
-            west: Math.min(...weatherData.longitude),
-            east: Math.max(...weatherData.longitude),
-            south: Math.min(...weatherData.latitude), 
-            north: Math.max(...weatherData.latitude)
+        if (!mapBounds && hasTemperatureData) {
+          // Calculate bounds from temperature_data if not provided
+          const lats = r.temperature_data.map((p: any) => p.latitude)
+          const lngs = r.temperature_data.map((p: any) => p.longitude)
+          mapBounds = {
+            north: Math.max(...lats),
+            south: Math.min(...lats),
+            east: Math.max(...lngs),
+            west: Math.min(...lngs)
           }
-          console.log('Using precise bounds from weather_data:', calculatedBounds)
         }
         
+        if (!mapCenter && mapBounds) {
+          mapCenter = [(mapBounds.west + mapBounds.east) / 2, (mapBounds.north + mapBounds.south) / 2]
+        }
+        
+        // Add padding for map view
+        const latPadding = mapBounds ? (mapBounds.north - mapBounds.south) * 0.1 : 1
+        const lngPadding = mapBounds ? (mapBounds.east - mapBounds.west) * 0.1 : 1
+        const paddedBounds = mapBounds ? {
+          north: mapBounds.north + latPadding,
+          south: mapBounds.south - latPadding,
+          east: mapBounds.east + lngPadding,
+          west: mapBounds.west - lngPadding
+        } : getMapBounds(currentQuery)
+        
+        const center = mapCenter ? {
+          lat: mapCenter[1],
+          lng: mapCenter[0]
+        } : {
+          lat: paddedBounds ? (paddedBounds.north + paddedBounds.south) / 2 : 39.5,
+          lng: paddedBounds ? (paddedBounds.east + paddedBounds.west) / 2 : -98.35
+        }
+        
+        console.log('Final bounds:', paddedBounds)
+        console.log('Final center:', center)
+        
+        // Create unified mapData structure
         mapData = {
-          map_url: r.overlay_url || '', // Use the backend overlay URL directly
-          bounds: calculatedBounds, // Use precise calculated bounds
-          center: weatherData?.center ? {
-            lat: weatherData.center[1],
-            lng: weatherData.center[0] 
-          } : center,
-          zoom: r.map_config.zoom || 7,
+          map_url: r.overlay_url || r.static_url || '',
+          bounds: paddedBounds,
+          center: center,
+          zoom: r.map_config?.zoom || 7,
           azureData: {
-            map_config: r.map_config,
-            temperature_data: r.map_config.data_points
-              .filter((point: any) => {
-                return point.latitude != null && 
-                       point.longitude != null && 
-                       point.value != null && 
-                       !isNaN(point.value) &&
-                       isFinite(point.value)
-              })
-              .map((point: any) => ({
-                latitude: point.latitude,
-                longitude: point.longitude,
-                value: point.value, // Keep original value
-                originalValue: point.value, // Store original for display
-                location: point.title || `${point.latitude.toFixed(2)}, ${point.longitude.toFixed(2)}`
-              })),
+            // New unified structure
+            static_url: r.static_url,
             overlay_url: r.overlay_url,
-            weather_data: r.weather_data,
-            legend: r.map_config.legend,
-            data_type: r.data_type,
+            temperature_data: r.temperature_data || [],
+            geojson: r.geojson,
+            bounds: r.bounds,
+            map_config: r.map_config,
+            
+            // Variable info from geojson or temperature_data
             variable_info: {
-              name: r.weather_data?.variable || 'Unknown',
-              unit: r.weather_data?.unit || '',
-              displayName: getDisplayName(r.weather_data?.variable)
+              name: r.temperature_data?.[0]?.variable || r.geojson?.features?.[0]?.properties?.variable || 'Unknown',
+              unit: r.temperature_data?.[0]?.unit || r.geojson?.features?.[0]?.properties?.unit || '',
+              displayName: getDisplayName(r.temperature_data?.[0]?.variable || r.geojson?.features?.[0]?.properties?.variable || '')
             },
+            
+            data_type: 'unified_backend',
             raw_response: r
           }
         }
         
-        console.log('Created mapData with matplotlib overlay:', overlayImageUrl)
+        // Set image URL for fallback display (prefer static for legend)
+        imageUrl = r.static_url
         
-        // Clean content for Azure Maps responses
-        cleanContent = 'Interactive Azure Maps visualization with temperature data ready.'
+        // Clean content
+        cleanContent = hasTemperatureData 
+          ? `Interactive map ready with ${r.temperature_data.length} data points. ${messages.length > 0 ? 'I can reference this map in follow-up questions.' : ''}`
+          : 'Map visualization ready. Static and interactive views available.'
         
       } else {
-        console.log('❌ Not detected as Azure Maps - processing as regular response')
-        // Regular PNG image response - existing logic
-        imageUrl = r?.analysis_data?.result?.map_url || null
-        // Check if the result field directly contains a URL (your current backend format)
-        // Check if the result field directly contains a URL (your current backend format)
-        if (!imageUrl && r?.result && typeof r.result === 'string' && r.result.startsWith('http')) {
-          imageUrl = r.result
-        }
+        console.log('❌ Processing as legacy or incomplete response')
+        // Fallback for incomplete responses
+        imageUrl = r?.static_url || r?.overlay_url || r?.content?.match(/https?:\/\/[^\s]+/)?.[0] || null
         
-        // Fallback: extract URL from content if not in proper structure
-        if (!imageUrl && r?.content) {
-          const urlMatch = r.content.match(/https?:\/\/[^\s]+/)
-          imageUrl = urlMatch ? urlMatch[0] : null
+        if (typeof cleanContent === 'string') {
+          cleanContent = cleanContent.replace(/https?:\/\/[^\s]+/g, '').replace(/Result:\s*$/, '').trim()
+          cleanContent = cleanContent.replace(/^(Temperature map created:|Analysis completed[\.!]*\s*Result:\s*)/i, '').trim()
         }
-        
-        // Clean the content text to remove URLs and unwanted patterns
-        cleanContent = cleanContent.replace(/https?:\/\/[^\s]+/g, '').replace(/Result:\s*$/, '').trim()
-        cleanContent = cleanContent.replace(/^(Temperature map created:|Analysis completed[\.!]*\s*Result:\s*)/i, '').trim()
       }
 
       const assistantMsg: Message = {
@@ -321,9 +296,33 @@ export default function Chat() {
           <div className="px-6 py-4 border-b">
             <div className="flex items-center gap-3">
               <div className="h-9 w-9 rounded-full bg-indigo-600 flex items-center justify-center text-white font-semibold">HC</div>
-              <div>
+              <div className="flex-1">
                 <div className="text-lg font-semibold">Hydrology Copilot</div>
                 <div className="text-xs text-gray-500">Ask a question and get a visualization</div>
+              </div>
+              
+              {/* Session info and controls */}
+              <div className="flex items-center gap-2">
+                {messages.length > 0 && (
+                  <button
+                    onClick={handleNewConversation}
+                    className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition"
+                    title="Start fresh conversation"
+                  >
+                    🔄 New Chat
+                  </button>
+                )}
+                
+                {userId && (
+                  <div className="text-xs text-gray-400 flex flex-col items-end">
+                    <div>User: {userId.substring(0, 8)}...</div>
+                    {messages.length > 0 && (
+                      <div className="text-blue-600">
+                        💬 Active Session
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -334,8 +333,13 @@ export default function Chat() {
               <div className="text-center text-gray-500">
                 <div>Type a query to generate a visualization</div>
                 <div className="text-xs text-gray-400 mt-1">
-                  💡 Try: "show temperature in Florida" or "show temperature in Florida on azure maps"
+                  💡 Try: "show temperature in Toronto" - Now with conversation memory!
                 </div>
+                {userId && (
+                  <div className="text-xs text-gray-300 mt-2">
+                    Your conversation history helps me provide better context.
+                  </div>
+                )}
               </div>
             )}
 
@@ -344,24 +348,63 @@ export default function Chat() {
                 <div className={`max-w-[85%] ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-xl rounded-tr-none' : 'bg-white text-gray-900 rounded-xl rounded-tl-none shadow'} p-4`}>
                   {m.text && <div className="whitespace-pre-wrap">{m.text}</div>}
                   
-                  {/* Interactive Azure Map - Only when mapData exists and has azureData AND valid Azure Maps key */}
-                  {m.mapData?.azureData && AZURE_MAPS_KEY && AZURE_MAPS_KEY !== 'your_actual_azure_maps_key_here' && (
-                    <div className="mt-3">
-                      <AzureMapView 
-                        mapData={m.mapData} 
-                        subscriptionKey={AZURE_MAPS_KEY}
-                        clientId={AZURE_MAPS_CLIENT_ID}
-                        height="500px"
-                      />
-                      <div className="mt-2 text-sm text-gray-500 flex justify-between items-center">
-                        <span className="text-xs">🗺️ Interactive Azure Maps • Zoom, pan, and hover for details</span>
-                        <span className="text-xs text-green-600">Live Data</span>
+                  {/* Show both static and interactive maps when we have GeoJSON data */}
+                  {m.mapData?.azureData?.geojson && (
+                    <div className="mt-3 space-y-4">
+                      {/* Interactive Azure Map */}
+                      {AZURE_MAPS_KEY && (
+                        <div>
+                          <h4 className="text-sm font-semibold mb-2">🗺️ Interactive Azure Maps</h4>
+                          <AzureMapView 
+                            mapData={m.mapData} 
+                            subscriptionKey={AZURE_MAPS_KEY}
+                            clientId={AZURE_MAPS_CLIENT_ID}
+                            height="500px"
+                          />
+                          <div className="mt-2 text-sm text-gray-500 flex justify-between items-center">
+                            <span className="text-xs">🗺️ Interactive Azure Maps • Click points for details • {m.mapData.azureData.geojson.features.length} data points</span>
+                            <span className="text-xs text-green-600">Live Data</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Static Map */}
+                      <div>
+                        <h4 className="text-sm font-semibold mb-2">📊 Static Map with Legend</h4>
+                        <div className="border rounded-md overflow-hidden bg-white" style={{ height: '400px' }}>
+                          <TransformWrapper
+                            initialScale={1}
+                            minScale={0.5}
+                            maxScale={4}
+                            centerOnInit={true}
+                            wheel={{ step: 0.1 }}
+                            pinch={{ step: 5 }}
+                            doubleClick={{ mode: 'toggle', step: 0.7 }}
+                          >
+                            {({ zoomIn, zoomOut, resetTransform }) => (
+                              <>
+                                <div className="absolute top-2 left-2 z-10 flex gap-1">
+                                  <button onClick={() => zoomIn()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">+</button>
+                                  <button onClick={() => zoomOut()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">−</button>
+                                  <button onClick={() => resetTransform()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">⌂</button>
+                                </div>
+                                <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }} contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                  <img src={m.mapData.azureData.static_url} alt="Static map with legend" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} draggable={false} />
+                                </TransformComponent>
+                              </>
+                            )}
+                          </TransformWrapper>
+                        </div>
+                        <div className="mt-2 text-sm text-gray-500 flex justify-between items-center">
+                          <span className="text-xs">💡 Scroll to zoom, drag to pan, double-click to toggle zoom</span>
+                          <a href={m.mapData.azureData.static_url} download="static-map-with-legend.png" className="text-indigo-600 hover:text-indigo-800 text-xs">Download</a>
+                        </div>
                       </div>
                     </div>
                   )}
 
-                  {/* Fallback: Show static image if no valid Azure Maps key or if it's a regular response */}
-                  {((m.imageUrl && !m.mapData?.azureData) || (m.mapData?.azureData && (!AZURE_MAPS_KEY || AZURE_MAPS_KEY === 'your_actual_azure_maps_key_here'))) && (
+                  {/* Fallback: Show static image only if no GeoJSON data */}
+                  {!m.mapData?.azureData?.geojson && m.imageUrl && (
                     <div className="mt-3">
                       <div className="border rounded-md overflow-hidden bg-white" style={{ height: '500px' }}>
                         <TransformWrapper

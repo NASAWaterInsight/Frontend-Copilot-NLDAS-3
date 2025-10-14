@@ -72,231 +72,185 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
       
       // Wait a bit for all base layers to load
       setTimeout(() => {
-        console.log('=== IMAGE OVERLAY ATTEMPT ===')
-        console.log('Checking mapData.map_url:', mapData.map_url)
-        console.log('Is valid URL?', mapData.map_url && mapData.map_url.startsWith('http'))
-        
-        // Add your actual backend overlay
-        if (mapData.map_url && mapData.map_url.startsWith('http')) {
-          console.log('=== COMPREHENSIVE BACKEND OVERLAY DEBUG ===')
-          console.log('✅ Adding YOUR backend overlay:', mapData.map_url)
-          console.log('Using precise bounds:', [bounds.west, bounds.north, bounds.east, bounds.south])
+        // Add overlay using unified backend structure
+        if (mapData.azureData?.overlay_url && mapData.azureData.overlay_url.startsWith('http')) {
+          console.log('✅ Adding overlay from unified backend:', mapData.azureData.overlay_url)
           
-          // Test 1: Check if URL is accessible
-          console.log('🔍 Step 1: Testing URL accessibility...')
-          fetch(mapData.map_url, { method: 'HEAD' })
-            .then(response => {
-              console.log('📊 Backend URL test results:')
-              console.log('- Status:', response.status)
-              console.log('- OK:', response.ok)
-              console.log('- Content-Type:', response.headers.get('content-type'))
-              
-              if (response.ok) {
-                console.log('✅ URL is accessible, proceeding with overlay creation...')
-                
-                // Create the image layer
-                const imageLayer = new atlas.layer.ImageLayer({
-                  url: mapData.map_url,
-                  coordinates: [
-                    [bounds.west, bounds.north],
-                    [bounds.east, bounds.north],
-                    [bounds.east, bounds.south],
-                    [bounds.west, bounds.south]
-                  ],
-                  opacity: 0.6 // Reduced opacity to see labels better
-                })
-                
-                console.log('✅ ImageLayer object created successfully')
-                
-                // Add to map with proper layer ordering
-                try {
-                  // Add your overlay BELOW the labels layer so city names stay visible
-                  map.layers.add(imageLayer, 'labels')
-                  console.log('✅ Backend overlay successfully added below labels!')
-                } catch (error) {
-                  console.error('❌ Failed to add backend overlay to map:', error)
-                  // Fallback: try other layer positions
-                  try {
-                    map.layers.add(imageLayer, 'road-labels')
-                    console.log('✅ Backend overlay added below road labels')
-                  } catch (fallbackError) {
-                    // Last resort: add to top (labels will be hidden)
-                    map.layers.add(imageLayer)
-                    console.log('⚠️ Backend overlay added to top - labels may be hidden')
-                  }
-                }
-                
-              } else {
-                console.error('❌ Backend URL returned error:', response.status, response.statusText)
-              }
-            })
-            .catch(error => {
-              console.error('❌ Backend URL completely inaccessible:', error)
-            })
-        } else {
-          console.log('❌ No valid backend URL found')
-          console.log('📊 mapData.map_url value:', mapData.map_url)
-        }
-        
-        console.log('=== END COMPREHENSIVE DEBUG ===')
-        
-        // Check azureData overlay (backup)
-        if (mapData.azureData && mapData.azureData.overlay_url && mapData.azureData.overlay_url.startsWith('http')) {
-          console.log('✅ Adding overlay from azureData:', mapData.azureData.overlay_url)
+          // Use backend-provided bounds (preferred) or calculated bounds
+          let overlayBounds = bounds
           
-          const azureImageLayer = new atlas.layer.ImageLayer({
+          if (mapData.azureData.bounds) {
+            overlayBounds = mapData.azureData.bounds
+            console.log('Using backend bounds from unified structure:', overlayBounds)
+          } else if (mapData.azureData.raw_response?.bounds) {
+            overlayBounds = mapData.azureData.raw_response.bounds
+            console.log('Using raw_response bounds:', overlayBounds)
+          } else {
+            console.log('Using calculated bounds:', overlayBounds)
+          }
+          
+          // Create image layer with precise bounds
+          const imageLayer = new atlas.layer.ImageLayer({
             url: mapData.azureData.overlay_url,
             coordinates: [
-              [bounds.west, bounds.north],
-              [bounds.east, bounds.north],
-              [bounds.east, bounds.south],
-              [bounds.west, bounds.south]
+              [overlayBounds.west, overlayBounds.north],
+              [overlayBounds.east, overlayBounds.north],
+              [overlayBounds.east, overlayBounds.south],
+              [overlayBounds.west, overlayBounds.south]
             ],
-            opacity: 0.6
+            opacity: 0.7
           })
           
           try {
-            // Also add below labels
-            map.layers.add(azureImageLayer, 'labels')
-            console.log('✅ Azure overlay added below labels')
+            map.layers.add(imageLayer, 'labels')
+            console.log('✅ Unified backend overlay added successfully')
           } catch (error) {
-            console.error('❌ Failed to add Azure overlay:', error)
-            // Fallback: add to top
-            map.layers.add(azureImageLayer)
+            console.error('❌ Failed to add overlay:', error)
+            map.layers.add(imageLayer)
           }
         }
         
-        // DEBUG: Show all available layer IDs after map loads
-        setTimeout(() => {
-          console.log('=== LAYER ORDER DEBUG ===')
-          const layers = map.layers.getLayers()
-          console.log('Available Azure Maps layers (bottom to top):')
-          layers.forEach((layer, index) => {
-            const layerId = layer.getId ? layer.getId() : 'No ID'
-            console.log(`${index}: ${layerId}`)
-          })
-          console.log('=== END LAYER ORDER ===')
-        }, 3000)
-        
-      }, 1000) // Wait 1 second for base layers to load
-      
-      // Rest of your existing code (temperature data points, etc.)
-      if (mapData.azureData && mapData.azureData.temperature_data) {
-        console.log('Adding temperature data to map:', mapData.azureData.temperature_data)
-        
-        // Create data source for temperature points (for interaction only)
-        const dataSource = new atlas.source.DataSource()
-        map.sources.add(dataSource)
-        
-        // Add temperature data points to the map (invisible, for clicking)
-        mapData.azureData.temperature_data.forEach((point: any) => {
-          const temperaturePoint = new atlas.data.Feature(
-            new atlas.data.Point([point.longitude, point.latitude]),
-            {
-              value: point.value,
-              originalValue: point.originalValue,
-              location: point.location || 'Unknown'
-            }
-          )
-          dataSource.add(temperaturePoint)
-        })
-        
-        // Add small invisible markers for interaction
-        const symbolLayer = new atlas.layer.SymbolLayer(dataSource, null, {
-          iconOptions: {
-            image: 'none',
-            allowOverlap: true
-          },
-          textOptions: {
-            textField: '',
-            size: 0
-          }
-        })
-        
-        map.layers.add(symbolLayer)
-        
-        // Add interactive popup for temperature readings
-        const popup = new atlas.Popup({
-          pixelOffset: [0, -18],
-          closeButton: true
-        })
-        
-        // Show popup when clicking near data points
-        map.events.add('click', (e: any) => {
-          const clickPoint = e.position
-          let nearestPoint = null
-          let minDistance = Infinity
+        // Process temperature_data (preferred) or fallback to geojson
+        if (mapData.azureData?.temperature_data && mapData.azureData.temperature_data.length > 0) {
+          console.log('✅ Using backend temperature_data (unified format)')
+          console.log('Temperature data count:', mapData.azureData.temperature_data.length)
+          console.log('Sample temperature point:', mapData.azureData.temperature_data[0])
           
-          // Find nearest temperature point
-          mapData.azureData.temperature_data.forEach((point: any) => {
-            const distance = Math.sqrt(
-              Math.pow(point.longitude - clickPoint[0], 2) + 
-              Math.pow(point.latitude - clickPoint[1], 2)
-            )
-            if (distance < minDistance) {
-              minDistance = distance
-              nearestPoint = point
-            }
+          processTemperatureData(mapData.azureData.temperature_data)
+          
+        } else if (mapData.azureData?.geojson?.features && mapData.azureData.geojson.features.length > 0) {
+          console.log('🔄 Fallback: Converting geojson to temperature_data format')
+          
+          const temperatureData = mapData.azureData.geojson.features.map((feature: any) => ({
+            latitude: feature.geometry.coordinates[1],
+            longitude: feature.geometry.coordinates[0],
+            value: feature.properties.value,
+            originalValue: feature.properties.value,
+            variable: feature.properties.variable,
+            unit: feature.properties.unit,
+            location: `${feature.geometry.coordinates[1].toFixed(2)}, ${feature.geometry.coordinates[0].toFixed(2)}`
+          }))
+          
+          console.log('✅ Converted geojson to temperature_data:', temperatureData.length, 'points')
+          processTemperatureData(temperatureData)
+          
+        } else {
+          console.log('❌ No temperature_data or geojson available for interaction')
+        }
+        
+        // Helper function to process temperature data
+        function processTemperatureData(temperatureData: any[]) {
+          console.log('Processing', temperatureData.length, 'temperature data points')
+          console.log('🎯 Backend data spacing - adjust detection radius based on data density')
+          
+          // Calculate data density to adjust detection radius
+          const avgDistance = temperatureData.length > 1 ? 
+            Math.sqrt((temperatureData[1].longitude - temperatureData[0].longitude) ** 2 + 
+                     (temperatureData[1].latitude - temperatureData[0].latitude) ** 2) : 0.1
+          
+          const adaptiveRadius = Math.max(0.1, Math.min(0.5, avgDistance * 2)) // Adaptive radius
+          console.log('Adaptive detection radius:', adaptiveRadius, '(≈', (adaptiveRadius * 111).toFixed(1), 'km)')
+
+          // Add interactive popup
+          const popup = new atlas.Popup({
+            pixelOffset: [0, -18],
+            closeButton: false
           })
           
-          // Show popup if clicked near a data point (within ~5km)
-          if (nearestPoint && minDistance < 0.05) {
-            // Get variable information from azureData
-            const variableInfo = mapData.azureData.variable_info || {
-              name: 'Unknown',
-              unit: '',
-              displayName: 'Data'
+          let hoverTimeout: NodeJS.Timeout | null = null
+          
+          // HOVER handler to find nearest data point
+          map.events.add('mousemove', (e: any) => {
+            // Clear previous timeout
+            if (hoverTimeout) {
+              clearTimeout(hoverTimeout)
             }
             
-            // Format the value based on variable type
-            let displayValue = nearestPoint.originalValue?.toFixed(2) || nearestPoint.value?.toFixed(2) || 'N/A'
-            let unitDisplay = variableInfo.unit
-            
-            // Special formatting for different variables with proper units
-            if (variableInfo.name === 'Tair' || variableInfo.name === 'Tair_f_inst') {
-              displayValue = nearestPoint.originalValue?.toFixed(2) || 'N/A'
-              unitDisplay = '°C'
-            } else if (variableInfo.name === 'Rainf_f_tavg' || variableInfo.name === 'Rainf') {
-              displayValue = (nearestPoint.originalValue * 3600)?.toFixed(3) || 'N/A' // Convert from kg/m²/s to mm/hr
-              unitDisplay = 'mm/hr'
-            } else if (variableInfo.name === 'Psurf' || variableInfo.name === 'Psurf_f_inst') {
-              displayValue = (nearestPoint.originalValue / 1000)?.toFixed(2) || 'N/A' // Convert Pa to kPa
-              unitDisplay = 'kPa'
-            } else if (variableInfo.name.includes('Wind')) {
-              displayValue = nearestPoint.originalValue?.toFixed(2) || 'N/A'
-              unitDisplay = 'm/s'
-            } else if (variableInfo.name.includes('Qair') || variableInfo.name.includes('Humidity')) {
-              displayValue = nearestPoint.originalValue?.toFixed(4) || 'N/A'
-              unitDisplay = 'kg/kg'
-            } else if (variableInfo.name.includes('SWdown') || variableInfo.name.includes('LWdown')) {
-              displayValue = nearestPoint.originalValue?.toFixed(1) || 'N/A'
-              unitDisplay = 'W/m²'
-            } else if (variableInfo.name.includes('SoilMoi')) {
-              displayValue = nearestPoint.originalValue?.toFixed(3) || 'N/A'
-              unitDisplay = 'm³/m³'
-            } else if (variableInfo.name.includes('SoilTemp')) {
-              displayValue = nearestPoint.originalValue?.toFixed(2) || 'N/A'
-              unitDisplay = '°C'
-            } else if (variableInfo.name.includes('Runoff') || variableInfo.name.includes('flow')) {
-              displayValue = (nearestPoint.originalValue * 3600)?.toFixed(3) || 'N/A' // Convert to mm/hr
-              unitDisplay = 'mm/hr'
+            // Add small delay to avoid flickering
+            hoverTimeout = setTimeout(() => {
+              const hoverPosition = e.position // [longitude, latitude]
+              
+              // Find the nearest data point to the cursor
+              let nearestPoint = null
+              let minDistance = Infinity
+              
+              temperatureData.forEach((point: any) => {
+                if (point.latitude != null && point.longitude != null) {
+                  const distance = Math.sqrt(
+                    Math.pow(point.longitude - hoverPosition[0], 2) + 
+                    Math.pow(point.latitude - hoverPosition[1], 2)
+                  )
+                  
+                  if (distance < minDistance) {
+                    minDistance = distance
+                    nearestPoint = point
+                  }
+                }
+              })
+              
+              // Use adaptive detection area based on data density
+              const maxDistance = adaptiveRadius
+              if (nearestPoint && minDistance < maxDistance) {
+                const variableInfo = mapData.azureData.variable_info || {
+                  name: 'Unknown',
+                  unit: '',
+                  displayName: 'Data'
+                }
+                
+                let displayValue = nearestPoint.originalValue?.toFixed(2) || nearestPoint.value?.toFixed(2) || 'N/A'
+                let unitDisplay = variableInfo.unit || '°C'
+                
+                // Format based on variable type
+                if (variableInfo.name === 'temperature') {
+                  displayValue = nearestPoint.value?.toFixed(1) || 'N/A'
+                  unitDisplay = '°C'
+                }
+                
+                // Show the actual data point location, not cursor location
+                const popupContent = `
+                  <div style="padding: 8px; min-width: 140px; font-size: 12px;">
+                    <div style="font-weight: bold; color: #2563eb; margin-bottom: 4px;">${variableInfo.displayName || 'Temperature'}</div>
+                    <div style="font-size: 14px; font-weight: bold; color: #dc2626;">
+                      ${displayValue} ${unitDisplay}
+                    </div>
+                    <div style="font-size: 10px; color: #6b7280; margin-top: 4px;">
+                      Data Point: ${nearestPoint.latitude?.toFixed(3)}°, ${nearestPoint.longitude?.toFixed(3)}°
+                    </div>
+                    <div style="font-size: 9px; color: #9ca3af;">
+                      ${(minDistance * 111).toFixed(1)}km from your cursor
+                    </div>
+                  </div>
+                `
+                
+                // Position popup at the ACTUAL data point location, not cursor
+                popup.setOptions({
+                  content: popupContent,
+                  position: [nearestPoint.longitude, nearestPoint.latitude] // Show at data point
+                })
+                popup.open(map)
+              } else {
+                // Hide popup when not near any data point
+                popup.close()
+              }
+            }, 50) // Reduced delay for better responsiveness
+          })
+          
+          // Hide popup when mouse leaves the map
+          map.events.add('mouseleave', () => {
+            if (hoverTimeout) {
+              clearTimeout(hoverTimeout)
             }
-            
-            popup.setOptions({
-              content: `<div style="padding: 15px;">
-                <h4 style="margin: 0 0 10px 0;">Environmental Data</h4>
-                <strong>${variableInfo.displayName}: ${displayValue} ${unitDisplay}</strong><br/>
-                <strong>Coordinates:</strong><br/>
-                Lat: ${clickPoint[1].toFixed(6)}<br/>
-                Lng: ${clickPoint[0].toFixed(6)}<br/>
-                <small>Distance: ${(minDistance * 111).toFixed(1)}km from nearest data point</small>
-              </div>`,
-              position: clickPoint
-            })
-            popup.open(map)
-          }
-        })
-      }
+            popup.close()
+          })
+          
+          // Change cursor to indicate hoverable area
+          map.getCanvasContainer().style.cursor = 'crosshair'
+          
+          console.log('✅ Unified backend processing complete with', temperatureData.length, 'interactive points')
+          console.log('🎯 Hover-only interaction: detection radius', adaptiveRadius.toFixed(2), '° (≈', (adaptiveRadius * 111).toFixed(1), 'km)')
+        }
+
+      }, 1000)
 
       // Fit map to bounds
       map.setCamera({
