@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "azure-maps-control": "^3.6.1",
+    "html-to-image": "^1.11.13",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-zoom-pan-pinch": "^3.7.0"

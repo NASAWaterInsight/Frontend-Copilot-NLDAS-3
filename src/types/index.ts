@@ -41,5 +41,26 @@ export interface MapData {
     temperature_data?: any
     weather_data?: any
     legend?: any
+
+    // NEW: bounds supplied by backend for overlay placement (already used)
+    bounds?: {
+      north: number
+      south: number
+      east: number
+      west: number
+    }
+
+    // NEW: drought analysis points (used by Chat/AzureMapView)
+    drought_regions?: DroughtRegion[]
   }
+}
+
+// NEW: Drought region point schema
+export interface DroughtRegion {
+  latitude: number
+  longitude: number
+  spi_value: number
+  rank?: number
+  severity?: 'extreme drought' | 'severe drought' | 'moderate drought' | 'mild drought' | 'near normal' | string
+  location?: string
 }
