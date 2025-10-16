@@ -158,6 +158,207 @@ export default function Chat() {
       let imageUrl = null
       let mapData: MapData | undefined
       let cleanContent = r?.content || ''
+      let hasRegionSummary = false
+
+      // --- Extract regions analysis (drought, temperature extremes, wettest, etc.) ---
+      let extremeRegions = 
+        r?.analysis_data?.result?.regions ||
+        r?.regions ||
+        r?.analysis_data?.result?.significant_drought_regions ||
+        r?.analysis_data?.result?.significant_regions ||
+        null
+
+      console.log('🔍 Extreme regions detection:', {
+        'r?.analysis_data?.result?.regions': r?.analysis_data?.result?.regions,
+        'r?.regions': r?.regions,
+        'extremeRegions final': extremeRegions,
+        'is array': Array.isArray(extremeRegions),
+        'length': extremeRegions?.length
+      })
+
+      // If content is structured, blank it before prepend
+      const contentIsObject = typeof r?.content === 'object' && r?.content !== null
+      if (contentIsObject) cleanContent = ''
+      
+      // Strip noisy backend lines
+      if (typeof cleanContent === 'string') {
+        cleanContent = cleanContent.replace(/^Analysis completed:.*$/i, '').trim()
+      }
+
+      // Get analysis info from backend
+      const analysisType = r?.analysis_data?.result?.analysis_type || 
+                          r?.analysis_type || 
+                          'extreme temperature regions'  // Default for your backend response
+      const variable = r?.analysis_data?.result?.variable || 
+                      r?.variable || 
+                      r?.temperature_data?.[0]?.variable || 
+                      r?.geojson?.features?.[0]?.properties?.variable || 
+                      'Tair'  // Default from your response
+
+      console.log('📊 Analysis metadata:', { analysisType, variable })
+
+      // Process and display extreme regions (temperature, wettest, drought, etc.)
+      if (Array.isArray(extremeRegions) && extremeRegions.length > 0) {
+        console.log('✅ Processing extreme regions:', extremeRegions)
+        
+        // Validate and normalize regions data
+        const validRegions = extremeRegions
+          .filter(p => {
+            const isValid = p && isFinite(p.latitude) && isFinite(p.longitude) && 
+                           (isFinite(p.value) || isFinite(p.spi_value))
+            console.log('🔍 Region validation:', { region: p, isValid })
+            return isValid
+          })
+          .map((p, idx) => {
+            const value = isFinite(p.value) ? p.value : p.spi_value
+            const normalized = {
+              latitude: p.latitude,
+              longitude: p.longitude,
+              value: value,
+              rank: p.rank ?? (idx + 1),
+              severity: p.severity || getSeverityLabel(analysisType, value),
+              location: p.location || `${p.latitude.toFixed(2)}, ${p.longitude.toFixed(2)}`
+            }
+            console.log('🎯 Normalized region:', normalized)
+            return normalized
+          })
+
+        console.log('📋 Valid regions after processing:', validRegions)
+
+        if (validRegions.length > 0) {
+          // Create formatted summary
+          const listText = validRegions
+            .map((p: any) => 
+              `${p.rank}. Lat ${p.latitude.toFixed(3)}, Lon ${p.longitude.toFixed(3)}, ${variable} ${p.value.toFixed(3)} (${p.severity})`
+            )
+            .join('\n')
+          
+          const summaryHeader = `Top ${validRegions.length} ${analysisType.replace('_', ' ')} locations:\n${listText}\n\n`
+          cleanContent = summaryHeader + (typeof cleanContent === 'string' ? cleanContent : '')
+          hasRegionSummary = true
+
+          console.log('📝 Summary created:', summaryHeader)
+
+          // Precompute bounds for map
+          const lats = validRegions.map((p: any) => p.latitude)
+          const lngs = validRegions.map((p: any) => p.longitude)
+          const regionBounds = {
+            north: Math.max(...lats),
+            south: Math.min(...lats),
+            east: Math.max(...lngs),
+            west: Math.min(...lngs)
+          }
+
+          console.log('🗺️ Region bounds calculated:', regionBounds)
+
+          // Create mapData for regions visualization
+          const hasMapArtifacts = r?.static_url || r?.overlay_url || r?.geotiff_url
+          console.log('🎨 Map artifacts check:', { hasMapArtifacts, static_url: r?.static_url, overlay_url: r?.overlay_url, geotiff_url: r?.geotiff_url })
+
+          if (!hasMapArtifacts) {
+            console.log('📍 Creating standalone region map...')
+            
+            const padLat = Math.max(0.1, (regionBounds.north - regionBounds.south) * 0.2)
+            const padLng = Math.max(0.1, (regionBounds.east - regionBounds.west) * 0.2)
+            const paddedBounds = {
+              north: regionBounds.north + padLat,
+              south: regionBounds.south - padLat,
+              east: regionBounds.east + padLng,
+              west: regionBounds.west - padLng
+            }
+
+            const tempData = validRegions.map((p: any) => ({
+              latitude: p.latitude,
+              longitude: p.longitude,
+              value: p.value,
+              originalValue: p.value,
+              variable: variable,
+              unit: getVariableUnit(variable),
+              location: p.location
+            }))
+
+            const geojson = {
+              type: 'FeatureCollection',
+              features: validRegions.map((p: any) => ({
+                type: 'Feature',
+                geometry: { type: 'Point', coordinates: [p.longitude, p.latitude] },
+                properties: {
+                  value: p.value,
+                  variable: variable,
+                  unit: getVariableUnit(variable),
+                  severity: p.severity,
+                  rank: p.rank,
+                  analysis_type: analysisType
+                }
+              }))
+            }
+
+            mapData = {
+              map_url: '',
+              bounds: paddedBounds,
+              center: {
+                lat: (regionBounds.north + regionBounds.south) / 2,
+                lng: (regionBounds.east + regionBounds.west) / 2
+              },
+              zoom: 8,
+              azureData: {
+                geojson,
+                temperature_data: tempData,
+                extreme_regions: validRegions,
+                variable_info: {
+                  name: variable,
+                  unit: getVariableUnit(variable),
+                  displayName: getDisplayName(variable)
+                },
+                analysis_type: analysisType,
+                data_type: 'extreme_regions',
+                raw_response: r
+              }
+            } as MapData
+
+            console.log('🏗️ Created standalone mapData:', mapData)
+          } else {
+            // Attach regions to existing map artifacts
+            console.log('🔗 Attaching regions to existing map artifacts...')
+            ;(r as any).__extreme_regions = validRegions
+            ;(r as any).__region_bounds = regionBounds
+          }
+        }
+      } else {
+        console.log('❌ No valid extreme regions found or not array:', { extremeRegions, isArray: Array.isArray(extremeRegions) })
+      }
+
+      // Helper function to get severity label
+      function getSeverityLabel(analysisType: string, value: number): string {
+        if (analysisType.includes('temperature')) {
+          if (analysisType.includes('coldest')) return 'coldest'
+          if (analysisType.includes('hottest')) return 'hottest'
+          return value < 15 ? 'cold' : 'warm'
+        }
+        if (analysisType.includes('wet')) return 'wettest'
+        if (analysisType.includes('dry')) return 'driest'
+        if (analysisType.includes('drought')) {
+          if (value <= -2.0) return 'extreme drought'
+          if (value <= -1.5) return 'severe drought'
+          if (value <= -1.0) return 'moderate drought'
+          return 'mild drought'
+        }
+        return 'extreme'
+      }
+
+      // Helper function to get variable unit
+      function getVariableUnit(variable: string): string {
+        const unitMap: { [key: string]: string } = {
+          'Tair': '°C',
+          'Rainf': 'mm/hr',
+          'Psurf': 'kPa',
+          'Wind': 'm/s',
+          'Qair': 'kg/kg',
+          'SPI': '',
+          'SPI3': ''
+        }
+        return unitMap[variable] || ''
+      }
 
       // Check for new unified backend structure
       const hasStaticUrl = !!r?.static_url
@@ -172,93 +373,78 @@ export default function Chat() {
         hasGeoJsonData, hasBounds, hasMapConfig 
       })
 
-      if (hasStaticUrl || hasOverlayUrl) {
-        console.log('✅ Processing unified backend format')
-        
-        // Use backend-provided bounds or calculate from temperature_data
-        let mapBounds = r.bounds
-        let mapCenter = r.map_config?.center
-        
-        if (!mapBounds && hasTemperatureData) {
-          // Calculate bounds from temperature_data if not provided
-          const lats = r.temperature_data.map((p: any) => p.latitude)
-          const lngs = r.temperature_data.map((p: any) => p.longitude)
-          mapBounds = {
-            north: Math.max(...lats),
-            south: Math.min(...lats),
-            east: Math.max(...lngs),
-            west: Math.min(...lngs)
+      // Build mapData if map artifacts exist OR if we have regions
+      if (hasStaticUrl || hasOverlayUrl || hasGeoJsonData || hasTemperatureData || mapData) {
+        if (!mapData) {
+          console.log('✅ Building mapData from backend artifacts')
+          
+          // Use existing mapData construction logic...
+          let mapBounds = r.bounds || (r as any).__region_bounds
+          let mapCenter = r.map_config?.center
+          
+          if (!mapBounds && hasTemperatureData) {
+            const lats = r.temperature_data.map((p: any) => p.latitude)
+            const lngs = r.temperature_data.map((p: any) => p.longitude)
+            mapBounds = {
+              north: Math.max(...lats), south: Math.min(...lats),
+              east: Math.max(...lngs), west: Math.min(...lngs)
+            }
+          }
+          
+          if (!mapCenter && mapBounds) {
+            mapCenter = [(mapBounds.west + mapBounds.east) / 2, (mapBounds.north + mapBounds.south) / 2]
+          }
+          
+          const latPadding = mapBounds ? (mapBounds.north - mapBounds.south) * 0.1 : 1
+          const lngPadding = mapBounds ? (mapBounds.east - mapBounds.west) * 0.1 : 1
+          const paddedBounds = mapBounds ? {
+            north: mapBounds.north + latPadding, south: mapBounds.south - latPadding,
+            east: mapBounds.east + lngPadding, west: mapBounds.west - lngPadding
+          } : getMapBounds(currentQuery)
+          
+          const center = mapCenter ? { lat: mapCenter[1], lng: mapCenter[0] } : {
+            lat: (paddedBounds.north + paddedBounds.south) / 2,
+            lng: (paddedBounds.east + paddedBounds.west) / 2
+          }
+          
+          mapData = {
+            map_url: r.overlay_url || r.static_url || '',
+            bounds: paddedBounds,
+            center: center,
+            zoom: r.map_config?.zoom || 7,
+            azureData: {
+              static_url: r.static_url,
+              overlay_url: r.overlay_url,
+              temperature_data: r.temperature_data || [],
+              geojson: r.geojson,
+              bounds: r.bounds,
+              map_config: r.map_config,
+              extreme_regions: (r as any).__extreme_regions || undefined,
+              variable_info: {
+                name: variable,
+                unit: getVariableUnit(variable),
+                displayName: getDisplayName(variable)
+              },
+              analysis_type: analysisType,
+              data_type: 'unified_backend',
+              raw_response: r
+            }
           }
         }
         
-        if (!mapCenter && mapBounds) {
-          mapCenter = [(mapBounds.west + mapBounds.east) / 2, (mapBounds.north + mapBounds.south) / 2]
-        }
-        
-        // Add padding for map view
-        const latPadding = mapBounds ? (mapBounds.north - mapBounds.south) * 0.1 : 1
-        const lngPadding = mapBounds ? (mapBounds.east - mapBounds.west) * 0.1 : 1
-        const paddedBounds = mapBounds ? {
-          north: mapBounds.north + latPadding,
-          south: mapBounds.south - latPadding,
-          east: mapBounds.east + lngPadding,
-          west: mapBounds.west - lngPadding
-        } : getMapBounds(currentQuery)
-        
-        const center = mapCenter ? {
-          lat: mapCenter[1],
-          lng: mapCenter[0]
-        } : {
-          lat: paddedBounds ? (paddedBounds.north + paddedBounds.south) / 2 : 39.5,
-          lng: paddedBounds ? (paddedBounds.east + paddedBounds.west) / 2 : -98.35
-        }
-        
-        console.log('Final bounds:', paddedBounds)
-        console.log('Final center:', center)
-        
-        // Create unified mapData structure
-        mapData = {
-          map_url: r.overlay_url || r.static_url || '',
-          bounds: paddedBounds,
-          center: center,
-          zoom: r.map_config?.zoom || 7,
-          azureData: {
-            // New unified structure
-            static_url: r.static_url,
-            overlay_url: r.overlay_url,
-            temperature_data: r.temperature_data || [],
-            geojson: r.geojson,
-            bounds: r.bounds,
-            map_config: r.map_config,
-            
-            // Variable info from geojson or temperature_data
-            variable_info: {
-              name: r.temperature_data?.[0]?.variable || r.geojson?.features?.[0]?.properties?.variable || 'Unknown',
-              unit: r.temperature_data?.[0]?.unit || r.geojson?.features?.[0]?.properties?.unit || '',
-              displayName: getDisplayName(r.temperature_data?.[0]?.variable || r.geojson?.features?.[0]?.properties?.variable || '')
-            },
-            
-            data_type: 'unified_backend',
-            raw_response: r
-          }
-        }
-        
-        // Set image URL for fallback display (prefer static for legend)
         imageUrl = r.static_url
         
-        // Clean content
-        cleanContent = hasTemperatureData 
-          ? `Interactive map ready with ${r.temperature_data.length} data points. ${messages.length > 0 ? 'I can reference this map in follow-up questions.' : ''}`
-          : 'Map visualization ready. Static and interactive views available.'
-        
+        // Don't append extra notes if we have a region summary
+        if (!hasRegionSummary && hasTemperatureData) {
+          const note = `Interactive map ready with ${r.temperature_data.length} data points.`
+          cleanContent = cleanContent ? `${cleanContent}\n${note}` : note
+        }
       } else {
-        console.log('❌ Processing as legacy or incomplete response')
-        // Fallback for incomplete responses
-        imageUrl = r?.static_url || r?.overlay_url || r?.content?.match(/https?:\/\/[^\s]+/)?.[0] || null
-        
+        // Legacy fallback
+        console.log('❌ Processing as legacy response')
+        imageUrl = r?.content?.match(/https?:\/\/[^\s]+/)?.[0] || null
         if (typeof cleanContent === 'string') {
-          cleanContent = cleanContent.replace(/https?:\/\/[^\s]+/g, '').replace(/Result:\s*$/, '').trim()
-          cleanContent = cleanContent.replace(/^(Temperature map created:|Analysis completed[\.!]*\s*Result:\s*)/i, '').trim()
+          cleanContent = cleanContent.replace(/https?:\/\/[^\s]+/g, '').trim()
         }
       }
 
