@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react'
 import * as atlas from 'azure-maps-control'
+import { loadGeoTiffOverlay, createDynamicLegend } from '../utils/geotiffLoader'
 
 interface AzureMapViewProps {
   mapData: {
@@ -70,43 +71,75 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
     map.events.add('ready', () => {
       console.log('Azure Maps ready, processing data...')
       
-      // Wait a bit for all base layers to load
       setTimeout(() => {
-        // Add overlay using unified backend structure
-        if (mapData.azureData?.overlay_url && mapData.azureData.overlay_url.startsWith('http')) {
-          console.log('✅ Adding overlay from unified backend:', mapData.azureData.overlay_url)
+        // Priority 1: Try GeoTIFF overlay (new preferred method)
+        if (mapData.azureData?.raw_response?.geotiff_url) {
+          console.log('🗺️ Loading GeoTIFF overlay:', mapData.azureData.raw_response.geotiff_url)
           
-          // Use backend-provided bounds (preferred) or calculated bounds
-          let overlayBounds = bounds
+          // Extract variable info and colormap from backend
+          const variable = mapData.azureData?.variable_info?.name || 
+                          mapData.azureData?.raw_response?.variable || 
+                          'unknown'
+          const colormap = mapData.azureData?.raw_response?.colormap || 
+                          mapData.azureData?.colormap
+          const unit = mapData.azureData?.variable_info?.unit || 
+                      mapData.azureData?.raw_response?.unit || ''
           
-          if (mapData.azureData.bounds) {
-            overlayBounds = mapData.azureData.bounds
-            console.log('Using backend bounds from unified structure:', overlayBounds)
-          } else if (mapData.azureData.raw_response?.bounds) {
-            overlayBounds = mapData.azureData.raw_response.bounds
-            console.log('Using raw_response bounds:', overlayBounds)
-          } else {
-            console.log('Using calculated bounds:', overlayBounds)
-          }
+          console.log('🎨 Variable metadata:', { variable, colormap, unit })
           
-          // Create image layer with precise bounds
-          const imageLayer = new atlas.layer.ImageLayer({
-            url: mapData.azureData.overlay_url,
-            coordinates: [
-              [overlayBounds.west, overlayBounds.north],
-              [overlayBounds.east, overlayBounds.north],
-              [overlayBounds.east, overlayBounds.south],
-              [overlayBounds.west, overlayBounds.south]
-            ],
-            opacity: 0.7
+          loadGeoTiffOverlay(
+            mapData.azureData.raw_response.geotiff_url, 
+            map, 
+            variable,
+            colormap
+          ).then(layer => {
+            if (layer) {
+              console.log('✅ GeoTIFF overlay loaded successfully')
+              
+              // Add dynamic legend based on variable type and backend metadata
+              const legend = createDynamicLegend(variable, colormap, unit)
+              mapRef.current?.appendChild(legend)
+            } else {
+              console.log('⚠️ GeoTIFF failed, falling back to PNG overlay')
+              addPngOverlay()
+            }
+          }).catch(error => {
+            console.error('GeoTIFF error, using PNG fallback:', error)
+            addPngOverlay()
           })
-          
-          try {
-            map.layers.add(imageLayer, 'labels')
-            console.log('✅ Unified backend overlay added successfully')
-          } catch (error) {
-            console.error('❌ Failed to add overlay:', error)
-            map.layers.add(imageLayer)
+        } else {
+          // Fallback to PNG overlay
+          addPngOverlay()
+        }
+        
+        function addPngOverlay() {
+          // Priority 2: Standard PNG overlay (existing logic)
+          if (mapData.azureData?.overlay_url && mapData.azureData.overlay_url.startsWith('http')) {
+            console.log('📸 Adding PNG overlay:', mapData.azureData.overlay_url)
+            
+            let overlayBounds = bounds
+            if (mapData.azureData.bounds) {
+              overlayBounds = mapData.azureData.bounds
+            }
+            
+            const imageLayer = new atlas.layer.ImageLayer({
+              url: mapData.azureData.overlay_url,
+              coordinates: [
+                [overlayBounds.west, overlayBounds.north],
+                [overlayBounds.east, overlayBounds.north],
+                [overlayBounds.east, overlayBounds.south],
+                [overlayBounds.west, overlayBounds.south]
+              ],
+              opacity: 0.7
+            })
+            
+            try {
+              map.layers.add(imageLayer, 'labels')
+              console.log('✅ PNG overlay added successfully')
+            } catch (error) {
+              console.error('❌ Failed to add PNG overlay:', error)
+              map.layers.add(imageLayer)
+            }
           }
         }
         

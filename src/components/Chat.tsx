@@ -348,63 +348,69 @@ export default function Chat() {
                 <div className={`max-w-[85%] ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-xl rounded-tr-none' : 'bg-white text-gray-900 rounded-xl rounded-tl-none shadow'} p-4`}>
                   {m.text && <div className="whitespace-pre-wrap">{m.text}</div>}
                   
-                  {/* Show both static and interactive maps when we have GeoJSON data */}
-                  {m.mapData?.azureData?.geojson && (
+                  {/* Show Azure Maps when we have any valid map data */}
+                  {m.mapData && AZURE_MAPS_KEY && (
                     <div className="mt-3 space-y-4">
                       {/* Interactive Azure Map */}
-                      {AZURE_MAPS_KEY && (
+                      <div>
+                        <h4 className="text-sm font-semibold mb-2">🗺️ Interactive Azure Maps</h4>
+                        <AzureMapView 
+                          mapData={m.mapData} 
+                          subscriptionKey={AZURE_MAPS_KEY}
+                          clientId={AZURE_MAPS_CLIENT_ID}
+                          height="500px"
+                        />
+                        <div className="mt-2 text-sm text-gray-500 flex justify-between items-center">
+                          <span className="text-xs">
+                            🗺️ Interactive Azure Maps • {
+                              m.mapData.azureData?.geojson?.features?.length 
+                                ? `Click points for details • ${m.mapData.azureData.geojson.features.length} data points`
+                                : 'GeoTIFF overlay with SPI drought data'
+                            }
+                          </span>
+                          <span className="text-xs text-green-600">Live Data</span>
+                        </div>
+                      </div>
+
+                      {/* Static Map - only if static_url exists */}
+                      {m.mapData.azureData?.static_url && (
                         <div>
-                          <h4 className="text-sm font-semibold mb-2">🗺️ Interactive Azure Maps</h4>
-                          <AzureMapView 
-                            mapData={m.mapData} 
-                            subscriptionKey={AZURE_MAPS_KEY}
-                            clientId={AZURE_MAPS_CLIENT_ID}
-                            height="500px"
-                          />
+                          <h4 className="text-sm font-semibold mb-2">📊 Static Map with Legend</h4>
+                          <div className="border rounded-md overflow-hidden bg-white" style={{ height: '400px' }}>
+                            <TransformWrapper
+                              initialScale={1}
+                              minScale={0.5}
+                              maxScale={4}
+                              centerOnInit={true}
+                              wheel={{ step: 0.1 }}
+                              pinch={{ step: 5 }}
+                              doubleClick={{ mode: 'toggle', step: 0.7 }}
+                            >
+                              {({ zoomIn, zoomOut, resetTransform }) => (
+                                <>
+                                  <div className="absolute top-2 left-2 z-10 flex gap-1">
+                                    <button onClick={() => zoomIn()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">+</button>
+                                    <button onClick={() => zoomOut()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">−</button>
+                                    <button onClick={() => resetTransform()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">⌂</button>
+                                  </div>
+                                  <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }} contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <img src={m.mapData.azureData.static_url} alt="Static map with legend" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} draggable={false} />
+                                  </TransformComponent>
+                                </>
+                              )}
+                            </TransformWrapper>
+                          </div>
                           <div className="mt-2 text-sm text-gray-500 flex justify-between items-center">
-                            <span className="text-xs">🗺️ Interactive Azure Maps • Click points for details • {m.mapData.azureData.geojson.features.length} data points</span>
-                            <span className="text-xs text-green-600">Live Data</span>
+                            <span className="text-xs">💡 Scroll to zoom, drag to pan, double-click to toggle zoom</span>
+                            <a href={m.mapData.azureData.static_url} download="static-map-with-legend.png" className="text-indigo-600 hover:text-indigo-800 text-xs">Download</a>
                           </div>
                         </div>
                       )}
-
-                      {/* Static Map */}
-                      <div>
-                        <h4 className="text-sm font-semibold mb-2">📊 Static Map with Legend</h4>
-                        <div className="border rounded-md overflow-hidden bg-white" style={{ height: '400px' }}>
-                          <TransformWrapper
-                            initialScale={1}
-                            minScale={0.5}
-                            maxScale={4}
-                            centerOnInit={true}
-                            wheel={{ step: 0.1 }}
-                            pinch={{ step: 5 }}
-                            doubleClick={{ mode: 'toggle', step: 0.7 }}
-                          >
-                            {({ zoomIn, zoomOut, resetTransform }) => (
-                              <>
-                                <div className="absolute top-2 left-2 z-10 flex gap-1">
-                                  <button onClick={() => zoomIn()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">+</button>
-                                  <button onClick={() => zoomOut()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">−</button>
-                                  <button onClick={() => resetTransform()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">⌂</button>
-                                </div>
-                                <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }} contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                  <img src={m.mapData.azureData.static_url} alt="Static map with legend" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} draggable={false} />
-                                </TransformComponent>
-                              </>
-                            )}
-                          </TransformWrapper>
-                        </div>
-                        <div className="mt-2 text-sm text-gray-500 flex justify-between items-center">
-                          <span className="text-xs">💡 Scroll to zoom, drag to pan, double-click to toggle zoom</span>
-                          <a href={m.mapData.azureData.static_url} download="static-map-with-legend.png" className="text-indigo-600 hover:text-indigo-800 text-xs">Download</a>
-                        </div>
-                      </div>
                     </div>
                   )}
 
-                  {/* Fallback: Show static image only if no GeoJSON data */}
-                  {!m.mapData?.azureData?.geojson && m.imageUrl && (
+                  {/* Fallback: Show static image only if no mapData but imageUrl exists */}
+                  {!m.mapData && m.imageUrl && (
                     <div className="mt-3">
                       <div className="border rounded-md overflow-hidden bg-white" style={{ height: '500px' }}>
                         <TransformWrapper
