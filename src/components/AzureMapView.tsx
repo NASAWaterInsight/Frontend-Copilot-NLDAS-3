@@ -267,167 +267,77 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
             console.warn('⚠️ tile_url missing in tileConfig')
             return
           }
-
-          // Prevent duplicate initialization
-          if ((window as any).__weatherTileLayerAdded) {
-            console.log('ℹ️ Tile layer already added (skipping)')
-            return
-          }
-          (window as any).__weatherTileLayerAdded = true
-
-          // Try native TileLayer first
-          if ((atlas as any).source?.TileSource && (atlas as any).layer?.TileLayer) {
-            try {
-              const sourceId = 'weather-tiles-src'
-              const layerId = 'weather-tiles-layer'
-              if (!map.sources.getById(sourceId)) {
-                const tileSource = new (atlas as any).source.TileSource(sourceId, {
-                  tileUrl: tileConfig.tile_url,
-                  minZoom: tileConfig.min_zoom || 3,
-                  maxZoom: tileConfig.max_zoom || 10,
-                  tileSize: tileConfig.tile_size || 256
-                })
-                map.sources.add(tileSource)
-                console.log('✅ TileSource added:', tileConfig.tile_url)
-              }
-
-              const tileLayer = new (atlas as any).layer.TileLayer({
-                source: sourceId,
-                opacity: 0.75
-              }, 'labels')
-              map.layers.add(tileLayer)
-              console.log('✅ Native TileLayer added:', tileConfig.variable)
-
-              // Diagnostics
-              debugTileMath(tileConfig)
-              addBoundsDiagnosticRect('Requested Bounds', '#ff0000')
-              return
-            } catch (e) {
-              console.warn('⚠️ Native TileLayer failed, falling back to manual grid:', (e as any)?.message)
-            }
-          }
-
-          // Manual fallback using ImageLayer grid (subset of existing logic)
-          try {
-            const z = Math.min(Math.max((tileConfig.min_zoom || 3), 6), (tileConfig.max_zoom || 10))
-            const req = mapData.azureData?.bounds || mapData.bounds || {
-              north: 49, south: 25, east: -66, west: -125
-            }
-            function lonLatToTile(lon: number, lat: number, zoom: number) {
-              const x = Math.floor((lon + 180) / 360 * Math.pow(2, zoom))
-              const y = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom))
-              return { x, y }
-            }
-            function tileToBounds(x: number, y: number, zoom: number) {
-              const n = Math.pow(2, zoom)
-              const west = x / n * 360 - 180
-              const east = (x + 1) / n * 360 - 180
-              const north = Math.atan(Math.sinh(Math.PI * (1 - 2 * y / n))) * 180 / Math.PI
-              const south = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y + 1) / n))) * 180 / Math.PI
-              return { north, south, east, west }
-            }
-            const nw = lonLatToTile(req.west, req.north, z)
-            const se = lonLatToTile(req.east, req.south, z)
-            console.log('🧮 Manual grid tile range:', { nw, se, z })
-
-            const tiles: { x: number; y: number; bounds: { north: number; south: number; east: number; west: number } }[] = []
-            for (let x = nw.x; x <= se.x; x++) {
-              for (let y = nw.y; y <= se.y; y++) {
-                const tb = tileToBounds(x, y, z)
-                tiles.push({ x, y, bounds: tb })
-              }
-            }
-            console.log(`🧮 Manual grid will add ${tiles.length} tiles`)
-
-            tiles.forEach((t, idx) => {
-              const url = tileConfig.tile_url
-                .replace('{z}', z.toString())
-                .replace('{x}', t.x.toString())
-                .replace('{y}', t.y.toString())
-
-              const coords: [number, number][] = [
-                [t.bounds.west, t.bounds.north],
-                [t.bounds.east, t.bounds.north],
-                [t.bounds.east, t.bounds.south],
-                [t.bounds.west, t.bounds.south]
-              ]
-
-              const imageLayer = new (atlas as any).layer.ImageLayer({
-                url,
-                coordinates: coords,
-                opacity: 0.75,
-                visible: true
-              })
-              try {
-                map.layers.add(imageLayer, 'labels')
-                console.log(`✅ Manual tile ${idx + 1}/${tiles.length} added`, { x: t.x, y: t.y, z })
-              } catch (e2) {
-                console.warn('⚠️ Failed adding manual ImageLayer tile:', (e2 as any)?.message)
-              }
-            })
-
-            addBoundsDiagnosticRect('Requested Bounds', '#ff0000')
-            debugTileMath(tileConfig)
-
-            map.setCamera({
-              bounds: [req.west, req.south, req.east, req.north],
-              padding: 40
-            })
-            console.log('🎯 Camera fitted to requested bounds')
-          } catch (e3) {
-            console.error('❌ Manual tile layer fallback failed:', (e3 as any)?.message)
-          }
         }
 
         // ✅ NEW: Load only backend-specified tiles
-function loadBackendTiles(tileList: any[]) {
-  console.log('🎯 ===== LOADING BACKEND-SPECIFIED TILES ONLY =====')
-  console.log('Tiles to load:', tileList)
+        function loadBackendTiles(tileList: any[]) {
+          console.log('🎯 ===== LOADING BACKEND-SPECIFIED TILES ONLY =====')
+          console.log('Tiles to load:', tileList)
 
-  if (!Array.isArray(tileList) || tileList.length === 0) {
-    console.error('❌ Invalid or empty tile list from backend')
-    return
-  }
+          // ✅ Clear existing tiles first
+          clearExistingWeatherTiles()
 
-  let successCount = 0
-  let errorCount = 0
+          if (!Array.isArray(tileList) || tileList.length === 0) {
+            console.error('❌ Invalid or empty tile list from backend')
+            return
+          }
 
-  tileList.forEach((tile, idx) => {
-    if (!tile.url || !tile.bounds) {
-      console.error(`❌ Invalid tile ${idx}:`, tile)
-      errorCount++
-      return
-    }
+          let successCount = 0
+          let errorCount = 0
 
-    console.log(`🔧 Loading backend tile ${idx + 1}/${tileList.length}: ${tile.url}`)
+          tileList.forEach((tile, idx) => {
+            if (!tile.url || !tile.bounds) {
+              console.error(`❌ Invalid tile ${idx}:`, tile)
+              errorCount++
+              return
+            }
 
-    try {
-      const coordinates: [number, number][] = [
-        [tile.bounds.west, tile.bounds.north],   // Top-left
-        [tile.bounds.east, tile.bounds.north],   // Top-right
-        [tile.bounds.east, tile.bounds.south],   // Bottom-right
-        [tile.bounds.west, tile.bounds.south]    // Bottom-left
-      ]
+            console.log(`🔧 Loading backend tile ${idx + 1}/${tileList.length}: ${tile.url}`)
 
-      const imageLayer = new atlas.layer.ImageLayer({
-        url: tile.url,
-        coordinates: coordinates,
-        opacity: 0.75,
-        visible: true
-      })
+            try {
+              const coordinates: [number, number][] = [
+                [tile.bounds.west, tile.bounds.north],   // Top-left
+                [tile.bounds.east, tile.bounds.north],   // Top-right
+                [tile.bounds.east, tile.bounds.south],   // Bottom-right
+                [tile.bounds.west, tile.bounds.south]    // Bottom-left
+              ]
 
-      map.layers.add(imageLayer, 'labels')
-      successCount++
-      console.log(`✅ Backend tile ${idx + 1}/${tileList.length} loaded: ${tile.z}/${tile.x}/${tile.y}`)
+              const imageLayer = new atlas.layer.ImageLayer({
+                url: tile.url,
+                coordinates: coordinates,
+                opacity: 0.75,
+                visible: true
+              })
 
-    } catch (e) {
-      console.error(`❌ Failed to load backend tile ${idx}:`, (e as any)?.message)
-      errorCount++
-    }
-  })
+              map.layers.add(imageLayer, 'labels')
+              successCount++
+              console.log(`✅ Backend tile ${idx + 1}/${tileList.length} loaded: ${tile.z}/${tile.x}/${tile.y}`)
 
-  console.log(`🎯 Backend tiles complete: ${successCount} success, ${errorCount} errors`)
-}
+            } catch (e) {
+              console.error(`❌ Failed to load backend tile ${idx}:`, (e as any)?.message)
+              errorCount++
+            }
+          })
+
+          console.log(`🎯 Backend tiles complete: ${successCount} success, ${errorCount} errors`)
+        }
+
+        // ✅ NEW: Clear existing weather tiles
+        function clearExistingWeatherTiles() {
+          try {
+            const layers = map.layers.getLayers()
+            layers.forEach(layer => {
+              const layerId = layer.getId()
+              if (layerId && (layerId.includes('weather') || layerId.includes('tile'))) {
+                map.layers.remove(layer)
+                console.log('🧹 Removed existing weather layer:', layerId)
+              }
+            })
+            delete (window as any).__weatherTileLayerAdded
+          } catch (e) {
+            console.warn('⚠️ Error clearing existing tiles:', (e as any)?.message)
+          }
+        }
 
         // ===== ADVANCED: CALCULATE VISIBLE TILES WITH tilebounds =====
         function calculateTilesInView(currentZoom?: number) {
@@ -494,13 +404,50 @@ function loadBackendTiles(tileList: any[]) {
         if (useTiles && tileConfig && tileConfig.tile_url) {
           console.log('🗺️ ====== USING TILE-BASED RENDERING ======')
           console.log('Tile URL template:', tileConfig.tile_url)
+
+          // ✅ COMPREHENSIVE BACKEND DATA DEBUG
+          console.log('🔍 ===== COMPREHENSIVE BACKEND DATA DEBUG =====')
+          console.log('🔍 Full tileConfig object:', JSON.stringify(tileConfig, null, 2))
+          console.log('🔍 Backend tile_list exists:', !!tileConfig.tile_list)
+          console.log('🔍 Backend tile_list type:', typeof tileConfig.tile_list)
+          console.log('🔍 Backend tile_list is array:', Array.isArray(tileConfig.tile_list))
+          console.log('🔍 Backend tile_list length:', tileConfig.tile_list?.length)
+          console.log('🔍 Backend tile_list content:', tileConfig.tile_list)
+          console.log('🔍 Backend region_bounds:', tileConfig.region_bounds)
+          console.log('🔍 Backend tile_count:', tileConfig.tile_count)
+          console.log('🔍 Backend color_scale:', tileConfig.color_scale)
+          console.log('🔍 Backend min_zoom:', tileConfig.min_zoom)
+          console.log('🔍 Backend max_zoom:', tileConfig.max_zoom)
+          console.log('🔍 Backend tile_size:', tileConfig.tile_size)
+          console.log('🔍 Backend variable:', tileConfig.variable)
+          console.log('🔍 Backend date:', tileConfig.date)
+          
+          if (tileConfig.tile_list && Array.isArray(tileConfig.tile_list) && tileConfig.tile_list.length > 0) {
+            console.log('🔍 First tile details:', JSON.stringify(tileConfig.tile_list[0], null, 2))
+            console.log('🔍 First tile URL:', tileConfig.tile_list[0]?.url)
+            console.log('🔍 First tile bounds:', tileConfig.tile_list[0]?.bounds)
+            console.log('🔍 First tile coordinates:', tileConfig.tile_list[0]?.x, tileConfig.tile_list[0]?.y, tileConfig.tile_list[0]?.z)
+          }
+          console.log('🔍 ===== END COMPREHENSIVE DEBUG =====')
+
+          console.log('🔍 TILE_LIST DEBUG:', {
+            tile_list_exists: !!tileConfig.tile_list,
+            is_array: Array.isArray(tileConfig.tile_list),
+            length: tileConfig.tile_list?.length,
+            first_tile: tileConfig.tile_list?.[0]
+          })
           
           // ✅ Check if backend provided specific tile list
           if (tileConfig.tile_list && Array.isArray(tileConfig.tile_list)) {
+            console.log(`🎯 ===== USING BACKEND TILE LIST =====`)
             console.log(`🎯 Loading ${tileConfig.tile_list.length} specific tiles from backend`)
+            console.log(`🎯 Backend says we should have ${tileConfig.tile_count} tiles`)
+            console.log(`🎯 Backend region bounds:`, tileConfig.region_bounds)
             loadBackendTiles(tileConfig.tile_list)
           } else {
-            console.log('🔧 No tile_list from backend, using bounded tile generation')
+            console.log('🔧 ===== FALLBACK TO MANUAL TILE GENERATION =====')
+            console.log('🔧 Reason: No tile_list from backend')
+            console.log('🔧 Will attempt to generate tiles manually')
             addTileLayer(tileConfig)
           }
 

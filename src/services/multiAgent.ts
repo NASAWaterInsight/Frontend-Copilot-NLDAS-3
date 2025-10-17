@@ -43,6 +43,24 @@ export async function callMultiAgentFunction(requestData: any) {
   console.log('📦 Tile config in raw response:', data.tile_config)
   console.log('📦 Use tiles in raw response:', data.use_tiles)
 
+  // ✅ ADD COMPREHENSIVE TILE DEBUG
+  if (data.tile_config) {
+    console.log('🔍 ===== BACKEND TILE CONFIG ANALYSIS =====')
+    console.log('🔍 tile_config keys:', Object.keys(data.tile_config))
+    console.log('🔍 tile_list exists:', !!data.tile_config.tile_list)
+    console.log('🔍 tile_list type:', typeof data.tile_config.tile_list)
+    console.log('🔍 tile_list is array:', Array.isArray(data.tile_config.tile_list))
+    console.log('🔍 tile_list length:', data.tile_config.tile_list?.length)
+    console.log('🔍 Full tile_list:', data.tile_config.tile_list)
+    
+    if (data.tile_config.tile_list && Array.isArray(data.tile_config.tile_list) && data.tile_config.tile_list.length > 0) {
+      console.log('🔍 First tile in list:', data.tile_config.tile_list[0])
+      console.log('🔍 First tile URL:', data.tile_config.tile_list[0]?.url)
+      console.log('🔍 First tile bounds:', data.tile_config.tile_list[0]?.bounds)
+    }
+    console.log('🔍 ===== END TILE CONFIG ANALYSIS =====')
+  }
+
   const transformedResponse = {
     response: {
       status: data.status,
@@ -59,7 +77,12 @@ export async function callMultiAgentFunction(requestData: any) {
         min_zoom: data.tile_config.min_zoom || 3,
         max_zoom: data.tile_config.max_zoom || 10,
         tile_size: data.tile_config.tile_size || 256,
-        bounds_endpoint: data.tile_config.bounds_endpoint
+        bounds_endpoint: data.tile_config.bounds_endpoint,
+        // ✅ CRITICAL FIX: Pass through tile_list from backend
+        tile_list: data.tile_config.tile_list,
+        region_bounds: data.tile_config.region_bounds,
+        tile_count: data.tile_config.tile_count,
+        color_scale: data.tile_config.color_scale
       } : undefined,
       temperature_data: data.geojson?.features ? data.geojson.features
         .filter((f: any) => {
@@ -104,8 +127,15 @@ export async function callMultiAgentFunction(requestData: any) {
   console.log('✅ Transformed FastAPI response:', transformedResponse)
   console.log('✅ Temperature data count:', transformedResponse.response.temperature_data.length)
   console.log('✅ Use tiles:', transformedResponse.response.use_tiles)
-  // ❌ was transformedResponse.response.tiles (invalid) - fix:
-  console.log('✅ Tile config:', transformedResponse.response.tile_config)
+  console.log('✅ Tile config after transformation:', transformedResponse.response.tile_config)
+  
+  // ✅ VERIFY TILE_LIST SURVIVAL
+  if (transformedResponse.response.tile_config) {
+    console.log('🔍 ===== TRANSFORMATION VERIFICATION =====')
+    console.log('🔍 tile_list survived transformation:', !!transformedResponse.response.tile_config.tile_list)
+    console.log('🔍 tile_list after transformation:', transformedResponse.response.tile_config.tile_list)
+    console.log('🔍 ===== END VERIFICATION =====')
+  }
 
   if (transformedResponse.response.use_tiles && !transformedResponse.response.tile_config) {
     console.warn('⚠️ use_tiles true but tile_config undefined')
