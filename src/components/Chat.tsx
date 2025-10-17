@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { callMultiAgentFunction } from '../services/multiAgent'
+import { callMultiAgentFunction, testFastAPIConnection } from '../services/multiAgent'
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch'
 import AzureMapView from './AzureMapView'
 import { getStableUserId, clearUserId } from '../utils/userIdentity'
@@ -36,6 +36,17 @@ export default function Chat() {
       const id = await getStableUserId()
       setUserId(id)
       console.log('Chat initialized for user:', id.substring(0, 8) + '...')
+      
+      // ✅ Test FastAPI connection with better messaging
+      console.log('🔧 Testing FastAPI connection...')
+      const fastApiWorking = await testFastAPIConnection()
+      if (fastApiWorking) {
+        console.log('✅ FastAPI server is working!')
+      } else {
+        console.error('❌ FastAPI server not responding')
+        console.error('💡 Make sure your FastAPI server is running on port 8000')
+        console.error('💡 Try: cd /path/to/your/fastapi/server && python -m uvicorn main:app --host 0.0.0.0 --port 8000')
+      }
     }
     initUser()
   }, [])
@@ -62,6 +73,30 @@ export default function Chat() {
     console.log('Browser info:', {
       userAgent: navigator.userAgent,
       location: window.location.href
+    })
+    
+    // ✅ Test FastAPI connection with detailed output
+    console.log('🔧 Testing FastAPI endpoints...')
+    testFastAPIConnection().then(working => {
+      console.log('🔧 FastAPI connection test result:', working)
+    })
+    
+    // ✅ Test specific endpoints
+    const testEndpoints = [
+      '/api/health',
+      '/docs', 
+      '/api/chat',
+      '/'
+    ]
+    
+    testEndpoints.forEach(endpoint => {
+      fetch(`http://localhost:8000${endpoint}`, { method: 'HEAD' })
+        .then(response => {
+          console.log(`🔍 ${endpoint}: ${response.status} ${response.statusText}`)
+        })
+        .catch(error => {
+          console.log(`❌ ${endpoint}: Failed - ${error.message}`)
+        })
     })
   }
 
@@ -538,6 +573,9 @@ export default function Chat() {
               bounds: mapBounds,  // Original bounds without padding
               map_config: r.map_config,
               extreme_regions: (r as any).__extreme_regions || undefined,
+              // ✅ CRITICAL: Pass through tile configuration
+              use_tiles: r.use_tiles,
+              tile_config: r.tile_config,
               variable_info: {
                 name: variable,
                 unit: getVariableUnit(variable),
@@ -549,21 +587,13 @@ export default function Chat() {
             }
           }
           
-          console.log('🏗️ Created mapData with URLs:', {
+          console.log('🏗️ Created mapData with tile info:', {
+            use_tiles: mapData.azureData?.use_tiles,
+            tile_config: mapData.azureData?.tile_config,
             geotiff_url: mapData.azureData?.geotiff_url,
             static_url: mapData.azureData?.static_url,
             overlay_url: mapData.azureData?.overlay_url
           })
-          
-          console.log('🏗️ ====== FINAL MAPDATA STRUCTURE ======')
-          console.log('mapData created:', !!mapData)
-          if (mapData) {
-            console.log('mapData.azureData.geotiff_url:', mapData.azureData?.geotiff_url)
-            console.log('Is it a string?:', typeof mapData.azureData?.geotiff_url === 'string')
-            console.log('Does it start with http?:', mapData.azureData?.geotiff_url?.startsWith('http'))
-            console.log('Full mapData.azureData:', mapData.azureData)
-          }
-          console.log('====== END MAPDATA STRUCTURE ======')
         }
         
         imageUrl = r.static_url

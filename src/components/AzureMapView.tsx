@@ -1,7 +1,17 @@
 import React, { useEffect, useRef } from 'react'
 import * as atlas from 'azure-maps-control'
-import 'azure-maps-control/dist/atlas.min.css' // Ensure marker CSS is loaded
+import 'azure-maps-control/dist/atlas.min.css'
 import { loadGeoTiffOverlay, createDynamicLegend } from '../utils/geotiffLoader'
+
+// ✅ NEW: Optional tile bounds helper (install: npm i @mapbox/tilebounds)
+// Guard import so app doesn’t crash if lib not installed yet.
+let tilebounds: any = null
+try {
+  // @ts-ignore
+  tilebounds = require('@mapbox/tilebounds')
+} catch {
+  console.warn('⚠️ tilebounds library not available - advanced tile debug limited')
+}
 
 interface AzureMapViewProps {
   mapData: {
@@ -17,7 +27,7 @@ interface AzureMapViewProps {
       lng: number
     }
     zoom?: number
-    azureData?: any // Backend JSON data for Azure Maps
+    azureData?: any
   }
   subscriptionKey: string
   clientId?: string
@@ -31,7 +41,6 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
   useEffect(() => {
     if (!mapRef.current || !subscriptionKey) return
 
-    // Default bounds for continental US if not provided
     const defaultBounds = {
       north: 49.0,
       south: 25.0,
@@ -47,7 +56,6 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
 
     console.log('Initializing Azure Maps with:', { bounds, center, azureData: mapData.azureData })
 
-    // Initialize the map
     const map = new atlas.Map(mapRef.current, {
       center: [center.lng, center.lat],
       zoom: mapData.zoom || 6,
@@ -64,464 +72,663 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
     mapInstanceRef.current = map
 
     map.events.add('ready', () => {
-      console.log('🗺️ ====== AZURE MAP READY - DETAILED DEBUG ======')
-      console.log('Map instance created:', !!map)
-      console.log('Map container:', mapRef.current)
-      console.log('Map camera:', map.getCamera())
-      
+      console.log('🗺️ Azure Maps Ready')
+
       setTimeout(() => {
-        console.log('📊 ====== RECEIVED DATA ANALYSIS ======')
-        console.log('Full mapData object:', JSON.stringify(mapData, null, 2))
+        console.log('📊 ====== FASTAPI DATA ANALYSIS ======')
         console.log('azureData keys:', mapData.azureData ? Object.keys(mapData.azureData) : 'NONE')
-        
-        // Check each data source
-        console.log('\n🔍 DATA SOURCE CHECK:')
-        console.log('1. geotiff_url:', {
-          exists: !!mapData.azureData?.geotiff_url,
-          value: mapData.azureData?.geotiff_url,
-          type: typeof mapData.azureData?.geotiff_url,
-          length: mapData.azureData?.geotiff_url?.length,
-          startsWithHttp: mapData.azureData?.geotiff_url?.startsWith('http')
-        })
-        
-        console.log('2. static_url:', {
-          exists: !!mapData.azureData?.static_url,
-          value: mapData.azureData?.static_url?.substring(0, 100),
-          type: typeof mapData.azureData?.static_url
-        })
-        
-        console.log('3. geojson:', {
-          exists: !!mapData.azureData?.geojson,
-          features: mapData.azureData?.geojson?.features?.length,
-          sampleFeature: mapData.azureData?.geojson?.features?.[0]
-        })
-        
-        console.log('4. temperature_data:', {
-          exists: !!mapData.azureData?.temperature_data,
-          count: mapData.azureData?.temperature_data?.length,
-          sample: mapData.azureData?.temperature_data?.[0]
-        })
-        
-        console.log('5. bounds:', {
-          provided: mapData.bounds,
-          valid: mapData.bounds && 
-                 isFinite(mapData.bounds.north) && 
-                 isFinite(mapData.bounds.south) && 
-                 isFinite(mapData.bounds.east) && 
-                 isFinite(mapData.bounds.west)
+        console.log('azureData full object:', mapData.azureData)
+
+        // ✅ FIXED: Check for tile-based rendering first with proper detection
+        const useTiles = mapData.azureData?.use_tiles === true
+        const tileConfig = mapData.azureData?.tile_config
+        const overlayUrl = mapData.azureData?.overlay_url
+        const staticUrl = mapData.azureData?.static_url
+        const hasGeoJsonData = !!(mapData.azureData?.geojson?.features?.length > 0)
+        const hasBounds = !!(mapData.azureData?.bounds || mapData.bounds)
+
+        console.log('🎯 ENHANCED FASTAPI DATA ANALYSIS:', {
+          useTiles: useTiles,
+          useTilesType: typeof mapData.azureData?.use_tiles,
+          useTilesValue: mapData.azureData?.use_tiles,
+          tileConfigExists: !!tileConfig,
+          tileConfig: tileConfig,
+          overlayUrl: overlayUrl,
+          staticUrl: staticUrl,
+          hasGeoJsonData,
+          hasBounds,
+          responseKeys: mapData.azureData ? Object.keys(mapData.azureData) : []
         })
 
-        // Determine what to render
-        const hasGeoTiffUrl = !!(mapData.azureData?.geotiff_url || mapData.azureData?.raw_response?.geotiff_url)
-        const hasGeoJsonData = !!(mapData.azureData?.geojson?.features && mapData.azureData.geojson.features.length > 0)
-        const hasExtremeRegions = !!(mapData.azureData?.extreme_regions && Array.isArray(mapData.azureData.extreme_regions) && mapData.azureData.extreme_regions.length > 0)
+        // ✅ NEW: BEGIN TILE DEBUG HELPERS =============================
 
-        console.log('\n🎯 RENDERING DECISION:')
-        console.log('hasGeoTiffUrl:', hasGeoTiffUrl)
-        console.log('hasGeoJsonData:', hasGeoJsonData)
-        console.log('hasExtremeRegions:', hasExtremeRegions)
+        // Original requested bounds (backend or fallback)
+        const requestedBounds = mapData.azureData?.bounds || mapData.bounds || bounds
 
-        // Priority 1: Try GeoTIFF overlay first
-        if (hasGeoTiffUrl) {
-          const geotiffUrl = mapData.azureData?.geotiff_url || mapData.azureData?.raw_response?.geotiff_url
-          console.log('\n🗺️ ====== ATTEMPTING GEOTIFF LOAD ======')
-          console.log('GeoTIFF URL:', geotiffUrl)
-          console.log('URL validation:', {
-            isDefined: !!geotiffUrl,
-            isString: typeof geotiffUrl === 'string',
-            startsWithHttp: geotiffUrl?.startsWith('http'),
-            length: geotiffUrl?.length,
-            hasSAS: geotiffUrl?.includes('?')
+        function debugTileMath(tileConfig?: any) {
+          console.log('🔬 ===== TILE MATH DEBUG =====')
+          if (!tileConfig) {
+            console.log('🔬 No tileConfig provided')
+            return
+          }
+          const zTest = 6
+          const corners = [
+            { name: 'NW', lon: requestedBounds.west, lat: requestedBounds.north },
+            { name: 'NE', lon: requestedBounds.east, lat: requestedBounds.north },
+            { name: 'SW', lon: requestedBounds.west, lat: requestedBounds.south },
+            { name: 'SE', lon: requestedBounds.east, lat: requestedBounds.south }
+          ]
+
+          function yLogSec(lat: number, zoom: number) {
+            const latRad = lat * Math.PI / 180
+            return Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * Math.pow(2, zoom))
+          }
+          function yAsinh(lat: number, zoom: number) {
+            const latRad = lat * Math.PI / 180
+            return Math.floor((1 - Math.asinh(Math.tan(latRad)) / Math.PI) / 2 * Math.pow(2, zoom))
+          }
+          function xLon(lon: number, zoom: number) {
+            return Math.floor((lon + 180) / 360 * Math.pow(2, zoom))
+          }
+
+          corners.forEach(c => {
+            const x = xLon(c.lon, zTest)
+            const y1 = yLogSec(c.lat, zTest)
+            const y2 = yAsinh(c.lat, zTest)
+            const yFlip1 = (Math.pow(2, zTest) - 1) - y1
+            const yFlip2 = (Math.pow(2, zTest) - 1) - y2
+            console.log(`🔬 Corner ${c.name}: lon=${c.lon}, lat=${c.lat}, z=${zTest} | x=${x}, y(log/sec)=${y1}, y(asinh)=${y2}, yFlip(log/sec)=${yFlip1}, yFlip(asinh)=${yFlip2}`)
           })
-          
-          // Test URL accessibility FIRST
-          console.log('🔍 Testing GeoTIFF URL accessibility...')
-          const testStartTime = performance.now()
-          
-          fetch(geotiffUrl, { method: 'HEAD' })
-            .then(response => {
-              const testEndTime = performance.now()
-              console.log('✅ GeoTIFF URL TEST RESULT:', {
-                status: response.status,
-                statusText: response.statusText,
-                ok: response.ok,
-                headers: {
-                  contentType: response.headers.get('content-type'),
-                  contentLength: response.headers.get('content-length'),
-                  cacheControl: response.headers.get('cache-control'),
-                  accessControlAllowOrigin: response.headers.get('access-control-allow-origin')
-                },
-                timeTaken: `${(testEndTime - testStartTime).toFixed(2)}ms`
-              })
-              
-              if (!response.ok) {
-                console.error('❌ GeoTIFF URL returned error status:', response.status)
-                console.error('Response details:', response)
-                addPngOverlay()
-                return
-              }
-              
-              // Check CORS
-              const corsHeader = response.headers.get('access-control-allow-origin')
-              if (!corsHeader || (corsHeader !== '*' && corsHeader !== window.location.origin)) {
-                console.warn('⚠️ CORS WARNING: access-control-allow-origin =', corsHeader)
-                console.warn('Current origin:', window.location.origin)
-                console.warn('This might cause issues loading the GeoTIFF')
-              }
-              
-              // Detect variable and colormap
-              let variable = 'SPI'  // Default
-              if (mapData.azureData?.variable_info?.name) {
-                variable = mapData.azureData.variable_info.name
-              } else if (mapData.azureData?.raw_response?.variable) {
-                variable = mapData.azureData.raw_response.variable
-              } else if (mapData.azureData?.geojson?.features?.[0]?.properties) {
-                const props = mapData.azureData.geojson.features[0].properties
-                if (props.spi !== undefined) variable = 'SPI'
-                else if (props.variable) variable = props.variable
-              }
-              
-              console.log('🎯 Detected variable:', variable)
-              
-              const colormap = mapData.azureData?.raw_response?.colormap
-              const unit = mapData.azureData?.variable_info?.unit || getVariableUnit(variable)
-              
-              console.log('🎨 Color configuration:', {
-                hasColormap: !!colormap,
-                colormap: colormap,
-                unit: unit
-              })
-              
-              console.log('🚀 Calling loadGeoTiffOverlay...')
-              loadGeoTiffOverlay(geotiffUrl, map, variable, colormap)
-                .then(layer => {
-                  console.log('📥 loadGeoTiffOverlay returned:', {
-                    success: !!layer,
-                    layerType: layer?.constructor?.name
-                  })
-                  
-                  if (layer) {
-                    console.log('✅ ====== GEOTIFF LOADED SUCCESSFULLY ======')
-                    console.log('Layer options:', layer.getOptions())
-                    
-                    // Verify layer is in map
-                    setTimeout(() => {
-                      const allLayers = map.layers.getLayers()
-                      console.log('🔍 Total map layers:', allLayers.length)
-                      const foundLayer = allLayers.find((l: any) => l === layer)
-                      console.log('🔍 Our layer found in map:', !!foundLayer)
-                      
-                      if (foundLayer) {
-                        const opts = foundLayer.getOptions()
-                        console.log('✅ Layer is active with options:', {
-                          visible: opts.visible,
-                          opacity: opts.opacity,
-                          hasUrl: !!opts.url,
-                          urlPreview: opts.url?.substring(0, 100),
-                          coordinatesCount: opts.coordinates?.length
-                        })
-                      } else {
-                        console.error('❌ Layer NOT found in map after adding!')
-                      }
-                    }, 2000)
-                    
-                    // Add legend
-                    const legend = createDynamicLegend(variable, colormap, unit)
-                    mapRef.current?.appendChild(legend)
-                    console.log('✅ Legend added to map')
-                    
-                    // Add hover interactions if we have data
-                    if (hasGeoJsonData) {
-                      console.log('🎯 Adding hover interactions for GeoTIFF + GeoJSON data')
-                      const temperatureData = mapData.azureData.geojson.features.map((feature: any) => ({
-                        latitude: feature.geometry.coordinates[1],
-                        longitude: feature.geometry.coordinates[0],
-                        spi: feature.properties.spi,
-                        value: feature.properties.spi,
-                        variable: variable,
-                        unit: getVariableUnit(variable)
-                      }))
-                      processTemperatureData(temperatureData)
-                    }
-                  } else {
-                    console.log('⚠️ ====== GEOTIFF RETURNED NULL ======')
-                    console.log('Falling back to PNG overlay')
-                    addPngOverlay()
-                  }
-                })
-                .catch(error => {
-                  console.error('❌ ====== GEOTIFF LOAD FAILED ======')
-                  console.error('Error type:', error?.constructor?.name)
-                  console.error('Error message:', error?.message)
-                  console.error('Error stack:', error?.stack)
-                  console.error('Full error object:', error)
-                  addPngOverlay()
-                })
-            })
-            .catch(urlError => {
-              console.error('❌ ====== GEOTIFF URL TEST FAILED ======')
-              console.error('Error type:', urlError?.constructor?.name)
-              console.error('Error message:', urlError?.message)
-              console.error('This usually means:', [
-                '1. Network issue',
-                '2. CORS blocking',
-                '3. Invalid URL',
-                '4. SAS token expired'
-              ])
-              addPngOverlay()
-            })
-        } 
-        // Priority 2: If no GeoTIFF but have GeoJSON, show circle markers
-        else if (hasGeoJsonData) {
-          console.log('📍 ====== NO GEOTIFF - SHOWING GEOJSON MARKERS ======')
-          addPngOverlay()
-          const features = mapData.azureData.geojson.features
-          addCircleMarkers(features)
-          
-          const temperatureData = features.map((feature: any) => ({
-            latitude: feature.geometry.coordinates[1],
-            longitude: feature.geometry.coordinates[0],
-            spi: feature.properties.spi,
-            value: feature.properties.spi || feature.properties.value,
-            variable: feature.properties.variable || 'SPI',
-            unit: ''
-          }))
-          processTemperatureData(temperatureData)
-        }
-        // Priority 3: Extreme regions analysis
-        else if (hasExtremeRegions) {
-          console.log('🌡️ ====== SHOWING EXTREME REGION MARKERS ======')
-          renderExtremeRegionMarkers()
-        }
-        else {
-          console.log('📸 ====== NO DATA - PNG OVERLAY ONLY ======')
-          addPngOverlay()
+
+          // Test live fetch for normal vs flipped y
+          const testX = xLon(requestedBounds.west, zTest)
+          const testYLog = yLogSec(requestedBounds.north, zTest)
+          const flippedY = (Math.pow(2, zTest) - 1) - testYLog
+          const testNormalUrl = tileConfig.tile_url
+            .replace('{z}', zTest.toString())
+            .replace('{x}', testX.toString())
+            .replace('{y}', testYLog.toString())
+          const testFlippedUrl = tileConfig.tile_url
+            .replace('{z}', zTest.toString())
+            .replace('{x}', testX.toString())
+            .replace('{y}', flippedY.toString())
+          console.log('🔬 Testing tile URL (normal):', testNormalUrl)
+          fetch(testNormalUrl, { method: 'HEAD' })
+            .then(r => console.log('🔬 Normal HEAD status:', r.status))
+            .catch(e => console.log('🔬 Normal HEAD error:', e.message))
+          console.log('🔬 Testing tile URL (flipped y):', testFlippedUrl)
+          fetch(testFlippedUrl, { method: 'HEAD' })
+            .then(r => console.log('🔬 Flipped HEAD status:', r.status))
+            .catch(e => console.log('🔬 Flipped HEAD error:', e.message))
+
+          console.log('🔬 ===== END TILE MATH DEBUG =====')
         }
 
-        // Function to add circle markers for GeoJSON data
-        function addCircleMarkers(features: any[]) {
-          console.log('📍 Adding circle markers for', features.length, 'GeoJSON features')
-          
-          const markers: atlas.HtmlMarker[] = []
-          
-          features.forEach((feature: any, index: number) => {
-            const lat = feature.geometry.coordinates[1]
-            const lng = feature.geometry.coordinates[0]
-            const value = feature.properties.spi || feature.properties.value || 0
-            
-            if (!isFinite(lat) || !isFinite(lng)) {
-              console.warn(`❌ Invalid coordinates for feature ${index + 1}:`, { lat, lng })
+        function addBoundsDiagnosticRect(label = 'Requested Bounds', color = '#ff0000') {
+          try {
+            const ds = new (atlas as any).source.DataSource()
+            map.sources.add(ds)
+            const poly = new (atlas as any).data.Polygon([[
+              [requestedBounds.west, requestedBounds.north],
+              [requestedBounds.east, requestedBounds.north],
+              [requestedBounds.east, requestedBounds.south],
+              [requestedBounds.west, requestedBounds.south],
+              [requestedBounds.west, requestedBounds.north]
+            ]])
+            ds.add(poly)
+            const layer = new (atlas as any).layer.PolygonLayer
+              ? new (atlas as any).layer.PolygonLayer(ds, undefined, {
+                  fillOpacity: 0.05,
+                  fillColor: color,
+                  strokeColor: color,
+                  strokeWidth: 2
+                })
+              : null
+            if (layer) {
+              map.layers.add(layer)
+              console.log(`🔲 Added diagnostic rectangle: ${label}`)
+            }
+          } catch (e) {
+            console.warn('⚠️ Could not add diagnostic rectangle:', (e as any)?.message)
+          }
+        }
+
+        function summarizeTiles(tiles: any[]) {
+          if (!tiles || tiles.length === 0) return
+          const north = Math.max(...tiles.map(t => t.bounds.north))
+          const south = Math.min(...tiles.map(t => t.bounds.south))
+          const east = Math.max(...tiles.map(t => t.bounds.east))
+          const west = Math.min(...tiles.map(t => t.bounds.west))
+          console.log('📐 Tile union bounds:', { north, south, east, west })
+          console.log('📐 Requested bounds:', requestedBounds)
+          console.log('📐 Overshoot:', {
+            north: (north - requestedBounds.north).toFixed(3),
+            south: (requestedBounds.south - south).toFixed(3),
+            east: (east - requestedBounds.east).toFixed(3),
+            west: (requestedBounds.west - west).toFixed(3)
+          })
+        }
+
+        // ===== NEW: HANDLE WEATHER RESPONSE STYLE (ABSTRACTED) =====
+        function handleWeatherResponse(response: any) {
+          console.log('🧩 handleWeatherResponse invoked')
+          if (response.use_tiles && response.tile_config) {
+            console.log('🗺️ Using tile-based rendering for large area')
+            renderWithTiles(response.tile_config, response)
+          } else if (response.overlay_url && response.bounds) {
+            console.log('📸 Using PNG overlay for small area')
+            // Already handled by addPngOverlay fallback
+          }
+          if (response.static_url) {
+            console.log('💾 Static URL available for download:', response.static_url)
+          }
+        }
+
+        // ===== TILE RENDERING (ABRIDGED) =====
+        function renderWithTiles(tileConfig: any, response: any) {
+          console.log('🔧 renderWithTiles start')
+          if (!tileConfig?.tile_url) {
+            console.warn('⚠️ Missing tile_url in tileConfig')
+            return
+          }
+          // Try native TileLayer first
+          if ((atlas as any).source?.TileSource && (atlas as any).layer?.TileLayer) {
+            try {
+              const source = new (atlas as any).source.TileSource('weather-tiles', {
+                tileUrl: tileConfig.tile_url,
+                tileSize: tileConfig.tile_size || 256,
+                maxZoom: tileConfig.max_zoom || 10,
+                minZoom: tileConfig.min_zoom || 3
+              })
+              map.sources.add(source)
+              const layer = new (atlas as any).layer.TileLayer({
+                source: source,
+                opacity: 0.7
+              }, 'labels')
+              map.layers.add(layer)
+              console.log('✅ Native TileLayer added')
+              debugTileMath(tileConfig)
+              addBoundsDiagnosticRect()
               return
+            } catch (e) {
+              console.warn('⚠️ Native TileLayer failed, falling back:', (e as any)?.message)
             }
-            
-            // Simple neutral circle markers - no manual coloring since backend provides colors
-            const marker = new atlas.HtmlMarker({
-              position: [lng, lat],
-              zIndex: 1000,
-              htmlContent: `
-                <div style="
-                  width: 8px;
-                  height: 8px;
-                  border-radius: 50%;
-                  background: #4A90E2;
-                  border: 1px solid white;
-                  box-shadow: 0 1px 2px rgba(0,0,0,0.3);
-                  cursor: pointer;
-                  ">
-                </div>
-              `
-            })
-            
-            try {
-              map.markers.add(marker)
-              markers.push(marker)
-              console.log(`✅ Circle marker ${index + 1} added at [${lng}, ${lat}] with value ${value.toFixed(2)}`)
-            } catch (error) {
-              console.error(`❌ Failed to add circle marker ${index + 1}:`, error)
-            }
-          })
-          
-          console.log(`📍 Total circle markers added: ${markers.length}`)
-          
-          // Cleanup function
-          map.events.addOnce('remove', () => {
-            markers.forEach(m => map.markers.remove(m))
-          })
+          }
+          // Fallback manual approach (already implemented -> addTileGrid)
+          console.log('🔁 Falling back to manual ImageLayer grid')
+          debugTileMath(tileConfig)
+          addBoundsDiagnosticRect()
         }
 
-        function addPngOverlay() {
-          console.log('📸 ATTEMPTING PNG OVERLAY')
-          console.log('- static_url exists:', !!mapData.azureData?.static_url)
-          console.log('- static_url value:', mapData.azureData?.static_url)
-          
-          if (mapData.azureData?.static_url && mapData.azureData.static_url.startsWith('http')) {
-            console.log('📸 Adding static PNG overlay:', mapData.azureData.static_url)
-            
-            // FIXED: Use proper bounds priority
-            let overlayBounds = bounds  // Default
-            if (mapData.azureData.bounds) {
-              overlayBounds = mapData.azureData.bounds
-              console.log('📍 Using azureData.bounds:', overlayBounds)
-            } else if (mapData.bounds) {
-              overlayBounds = mapData.bounds
-              console.log('📍 Using mapData.bounds:', overlayBounds)
-            } else {
-              console.log('📍 Using default bounds:', overlayBounds)
-            }
-            
-            // Create coordinates for the overlay
-            const coordinates = [
-              [overlayBounds.west, overlayBounds.north],
-              [overlayBounds.east, overlayBounds.north],
-              [overlayBounds.east, overlayBounds.south],
-              [overlayBounds.west, overlayBounds.south]
-            ]
-            
-            console.log('📍 Image coordinates:', coordinates)
-            
-            const imageLayer = new atlas.layer.ImageLayer({
-              url: mapData.azureData.static_url,
-              coordinates: coordinates,
-              opacity: 0.9,
-              visible: true
-            })
-            
+        // ✅ NEW: addTileLayer (was referenced but missing) 
+        function addTileLayer(tileConfig: any) {
+          console.log('🛠 addTileLayer invoked')
+          if (!tileConfig?.tile_url) {
+            console.warn('⚠️ tile_url missing in tileConfig')
+            return
+          }
+
+          // Prevent duplicate initialization
+          if ((window as any).__weatherTileLayerAdded) {
+            console.log('ℹ️ Tile layer already added (skipping)')
+            return
+          }
+          (window as any).__weatherTileLayerAdded = true
+
+          // Try native TileLayer first
+          if ((atlas as any).source?.TileSource && (atlas as any).layer?.TileLayer) {
             try {
-              map.layers.add(imageLayer, 'labels')
-              console.log('✅ Static overlay added below labels')
-            } catch (error) {
-              console.error('❌ Failed to add static overlay below labels:', error)
+              const sourceId = 'weather-tiles-src'
+              const layerId = 'weather-tiles-layer'
+              if (!map.sources.getById(sourceId)) {
+                const tileSource = new (atlas as any).source.TileSource(sourceId, {
+                  tileUrl: tileConfig.tile_url,
+                  minZoom: tileConfig.min_zoom || 3,
+                  maxZoom: tileConfig.max_zoom || 10,
+                  tileSize: tileConfig.tile_size || 256
+                })
+                map.sources.add(tileSource)
+                console.log('✅ TileSource added:', tileConfig.tile_url)
+              }
+
+              const tileLayer = new (atlas as any).layer.TileLayer({
+                source: sourceId,
+                opacity: 0.75
+              }, 'labels')
+              map.layers.add(tileLayer)
+              console.log('✅ Native TileLayer added:', tileConfig.variable)
+
+              // Diagnostics
+              debugTileMath(tileConfig)
+              addBoundsDiagnosticRect('Requested Bounds', '#ff0000')
+              return
+            } catch (e) {
+              console.warn('⚠️ Native TileLayer failed, falling back to manual grid:', (e as any)?.message)
+            }
+          }
+
+          // Manual fallback using ImageLayer grid (subset of existing logic)
+          try {
+            const z = Math.min(Math.max((tileConfig.min_zoom || 3), 6), (tileConfig.max_zoom || 10))
+            const req = mapData.azureData?.bounds || mapData.bounds || {
+              north: 49, south: 25, east: -66, west: -125
+            }
+            function lonLatToTile(lon: number, lat: number, zoom: number) {
+              const x = Math.floor((lon + 180) / 360 * Math.pow(2, zoom))
+              const y = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom))
+              return { x, y }
+            }
+            function tileToBounds(x: number, y: number, zoom: number) {
+              const n = Math.pow(2, zoom)
+              const west = x / n * 360 - 180
+              const east = (x + 1) / n * 360 - 180
+              const north = Math.atan(Math.sinh(Math.PI * (1 - 2 * y / n))) * 180 / Math.PI
+              const south = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y + 1) / n))) * 180 / Math.PI
+              return { north, south, east, west }
+            }
+            const nw = lonLatToTile(req.west, req.north, z)
+            const se = lonLatToTile(req.east, req.south, z)
+            console.log('🧮 Manual grid tile range:', { nw, se, z })
+
+            const tiles: { x: number; y: number; bounds: { north: number; south: number; east: number; west: number } }[] = []
+            for (let x = nw.x; x <= se.x; x++) {
+              for (let y = nw.y; y <= se.y; y++) {
+                const tb = tileToBounds(x, y, z)
+                tiles.push({ x, y, bounds: tb })
+              }
+            }
+            console.log(`🧮 Manual grid will add ${tiles.length} tiles`)
+
+            tiles.forEach((t, idx) => {
+              const url = tileConfig.tile_url
+                .replace('{z}', z.toString())
+                .replace('{x}', t.x.toString())
+                .replace('{y}', t.y.toString())
+
+              const coords: [number, number][] = [
+                [t.bounds.west, t.bounds.north],
+                [t.bounds.east, t.bounds.north],
+                [t.bounds.east, t.bounds.south],
+                [t.bounds.west, t.bounds.south]
+              ]
+
+              const imageLayer = new (atlas as any).layer.ImageLayer({
+                url,
+                coordinates: coords,
+                opacity: 0.75,
+                visible: true
+              })
               try {
-                map.layers.add(imageLayer)
-                console.log('✅ Static overlay added to top')
-              } catch (error2) {
-                console.error('❌ Failed to add static overlay at all:', error2)
+                map.layers.add(imageLayer, 'labels')
+                console.log(`✅ Manual tile ${idx + 1}/${tiles.length} added`, { x: t.x, y: t.y, z })
+              } catch (e2) {
+                console.warn('⚠️ Failed adding manual ImageLayer tile:', (e2 as any)?.message)
               }
-            }
-          } else {
-            console.log('❌ No valid static_url for PNG overlay')
+            })
+
+            addBoundsDiagnosticRect('Requested Bounds', '#ff0000')
+            debugTileMath(tileConfig)
+
+            map.setCamera({
+              bounds: [req.west, req.south, req.east, req.north],
+              padding: 40
+            })
+            console.log('🎯 Camera fitted to requested bounds')
+          } catch (e3) {
+            console.error('❌ Manual tile layer fallback failed:', (e3 as any)?.message)
           }
         }
 
-        // Keep extreme regions function for cases without overlay data
-        function renderExtremeRegionMarkers() {
-          const extremeRegions = mapData.azureData!.extreme_regions!
-          const analysisType = mapData.azureData!.analysis_type || 'extreme'
-          
-          console.log('🌡️ Rendering extreme region markers:', extremeRegions.length)
+        // ✅ NEW: Load only backend-specified tiles
+function loadBackendTiles(tileList: any[]) {
+  console.log('🎯 ===== LOADING BACKEND-SPECIFIED TILES ONLY =====')
+  console.log('Tiles to load:', tileList)
 
-          const markers: atlas.HtmlMarker[] = []
-          const popup = new atlas.Popup({ pixelOffset: [0, -40] })
+  if (!Array.isArray(tileList) || tileList.length === 0) {
+    console.error('❌ Invalid or empty tile list from backend')
+    return
+  }
 
-          function getExtremeColor(severity: string, analysisType: string): string {
-            if (analysisType.includes('temperature')) {
-              if (severity === 'coldest') return '#0066CC'
-              if (severity === 'hottest') return '#FF3300'
-              return '#FF8C00'
-            }
-            if (analysisType.includes('wet')) return '#0066FF'
-            if (analysisType.includes('dry')) return '#CC6600'
-            if (severity === 'extreme drought') return '#8B0000'
-            if (severity === 'severe drought') return '#FF0000'
-            if (severity === 'moderate drought') return '#FF4500'
-            return '#1D4ED8'
+  let successCount = 0
+  let errorCount = 0
+
+  tileList.forEach((tile, idx) => {
+    if (!tile.url || !tile.bounds) {
+      console.error(`❌ Invalid tile ${idx}:`, tile)
+      errorCount++
+      return
+    }
+
+    console.log(`🔧 Loading backend tile ${idx + 1}/${tileList.length}: ${tile.url}`)
+
+    try {
+      const coordinates: [number, number][] = [
+        [tile.bounds.west, tile.bounds.north],   // Top-left
+        [tile.bounds.east, tile.bounds.north],   // Top-right
+        [tile.bounds.east, tile.bounds.south],   // Bottom-right
+        [tile.bounds.west, tile.bounds.south]    // Bottom-left
+      ]
+
+      const imageLayer = new atlas.layer.ImageLayer({
+        url: tile.url,
+        coordinates: coordinates,
+        opacity: 0.75,
+        visible: true
+      })
+
+      map.layers.add(imageLayer, 'labels')
+      successCount++
+      console.log(`✅ Backend tile ${idx + 1}/${tileList.length} loaded: ${tile.z}/${tile.x}/${tile.y}`)
+
+    } catch (e) {
+      console.error(`❌ Failed to load backend tile ${idx}:`, (e as any)?.message)
+      errorCount++
+    }
+  })
+
+  console.log(`🎯 Backend tiles complete: ${successCount} success, ${errorCount} errors`)
+}
+
+        // ===== ADVANCED: CALCULATE VISIBLE TILES WITH tilebounds =====
+        function calculateTilesInView(currentZoom?: number) {
+          if (!tilebounds || !tileConfig?.tile_url) {
+            console.log('⚠️ tilebounds or tileConfig missing - skip live tile calc')
+            return
           }
-
-          extremeRegions.forEach((r: any, index: number) => {
-            if (!isFinite(r.longitude) || !isFinite(r.latitude)) {
-              console.error(`❌ Invalid coordinates for marker ${index + 1}:`, r)
-              return
-            }
-
-            const color = getExtremeColor(r.severity, analysisType)
-            
-            const marker = new atlas.HtmlMarker({
-              position: [r.longitude, r.latitude],
-              zIndex: 3000,
-              htmlContent: `
-                <div style="
-                  width: 50px;
-                  height: 50px;
-                  border-radius: 50%;
-                  background: ${color};
-                  border: 5px solid #ffffff;
-                  display: flex;
-                  align-items: center;
-                  justify-content: center;
-                  color: #ffffff;
-                  font-weight: 900;
-                  font-size: 18px;
-                  box-shadow: 0 6px 15px rgba(0,0,0,0.6);
-                  cursor: pointer;
-                  font-family: system-ui;
-                  ">
-                  ${r.rank || (index + 1)}
-                </div>
-              `
-            })
-
-            marker.addEventListener('click', () => {
-              const variable = mapData.azureData?.variable_info?.name || 'Value'
-              const unit = mapData.azureData?.variable_info?.unit || ''
-              
-              popup.setOptions({
-                content: `
-                  <div style="padding:15px;min-width:240px;font-size:14px;font-family:system-ui;">
-                    <h4 style="margin:0 0 12px 0;color:${color};font-size:16px;">
-                      ${analysisType.replace('_', ' ')} #${r.rank}
-                    </h4>
-                    <div style="margin:6px 0;"><strong>${variable}:</strong> ${Number(r.value).toFixed(3)} ${unit}</div>
-                    <div style="margin:6px 0;"><strong>Category:</strong> ${r.severity}</div>
-                    <div style="margin:6px 0;color:#666;"><strong>Coordinates:</strong><br/>${r.latitude.toFixed(4)}°, ${r.longitude.toFixed(4)}°</div>
-                  </div>
-                `,
-                position: [r.longitude, r.latitude]
+          const cam = map.getCamera()
+          const zoom = currentZoom ?? Math.floor(cam.zoom || 6)
+          const b = cam.bounds // [west,south,east,north]
+          if (!b || b.length !== 4) {
+            console.log('⚠️ Camera bounds unavailable for tile calc')
+            return
+          }
+          const clampedZoom = Math.max(tileConfig.min_zoom || 3, Math.min(tileConfig.max_zoom || 10, zoom))
+          let tiles
+          try {
+            tiles = tilebounds.bboxToTile(b[0], b[1], b[2], b[3], clampedZoom)
+          } catch (e) {
+            console.warn('⚠️ bboxToTile failed:', (e as any)?.message)
+            return
+          }
+          const results: any[] = []
+          for (let x = tiles.minX; x <= tiles.maxX; x++) {
+            for (let y = tiles.minY; y <= tiles.maxY; y++) {
+              const tb = tilebounds.tile2bbox(x, y, clampedZoom) // [w,s,e,n]
+              results.push({
+                x, y, z: clampedZoom,
+                bounds: { west: tb[0], south: tb[1], east: tb[2], north: tb[3] }
               })
-              popup.open(map)
-            })
-
-            try {
-              map.markers.add(marker)
-              markers.push(marker)
-              console.log(`✅ Extreme region marker ${index + 1} added at [${r.longitude}, ${r.latitude}]`)
-            } catch (error) {
-              console.error(`❌ Failed to add extreme region marker ${index + 1}:`, error)
             }
-          })
+          }
+          console.log(`🔍 Visible tiles (tilebounds) z=${clampedZoom}: count=${results.length}`)
+          summarizeTiles(results)
+          // Test one tile fetch
+          if (results[0]) {
+            const testUrl = tileConfig.tile_url
+              .replace('{z}', clampedZoom.toString())
+              .replace('{x}', results[0].x.toString())
+              .replace('{y}', results[0].y.toString())
+            fetch(testUrl, { method: 'HEAD' })
+              .then(r => console.log('🔍 HEAD test first visible tile:', testUrl, 'status=', r.status))
+              .catch(e => console.log('🔍 HEAD test error:', e.message))
+          }
+        }
 
-          // Cleanup
-          map.events.addOnce('remove', () => {
-            markers.forEach(m => map.markers.remove(m))
+        // Expose debug globally
+        ;(window as any).__azureTileDebug = {
+          requestedBounds,
+          tileConfig,
+          debugTileMath,
+          calculateTilesInView
+        }
+        console.log('🧪 Global debug object available at window.__azureTileDebug')
+
+      
+
+        // Invoke handleWeatherResponse for unified flow
+        handleWeatherResponse(mapData.azureData || {})
+
+        // ===== END TILE DEBUG HELPERS =============================
+
+        // ✅ PRIORITY 1: Use tile-based rendering if available
+        if (useTiles && tileConfig && tileConfig.tile_url) {
+          console.log('🗺️ ====== USING TILE-BASED RENDERING ======')
+          console.log('Tile URL template:', tileConfig.tile_url)
+          
+          // ✅ Check if backend provided specific tile list
+          if (tileConfig.tile_list && Array.isArray(tileConfig.tile_list)) {
+            console.log(`🎯 Loading ${tileConfig.tile_list.length} specific tiles from backend`)
+            loadBackendTiles(tileConfig.tile_list)
+          } else {
+            console.log('🔧 No tile_list from backend, using bounded tile generation')
+            addTileLayer(tileConfig)
+          }
+
+          // Add hover interactions for GeoJSON data
+          if (hasGeoJsonData) {
+            console.log('🎯 Adding hover interactions for tile + GeoJSON')
+            const variable = tileConfig.variable || 'temperature'
+            const unit = mapData.azureData.geojson.features[0]?.properties?.unit || '°C'
+
+            const temperatureData = mapData.azureData.geojson.features.map((feature: any) => ({
+              latitude: feature.geometry.coordinates[1],
+              longitude: feature.geometry.coordinates[0],
+              value: feature.properties.value,
+              variable: feature.properties.variable || variable,
+              unit: feature.properties.unit || unit
+            }))
+
+            processTemperatureData(temperatureData, variable, unit)
+          }
+        }
+        // ✅ PRIORITY 2: Fall back to PNG overlay ONLY if not using tiles
+        else if ((overlayUrl || staticUrl) && hasBounds) {
+          console.log('📸 ====== FALLING BACK TO PNG OVERLAY ======')
+          console.log('Reason: useTiles =', useTiles, ', tileConfig =', !!tileConfig)
+          addPngOverlay()
+
+          if (hasGeoJsonData) {
+            console.log('🎯 Adding hover interactions for PNG + GeoJSON')
+            const variable = mapData.azureData?.geojson?.features?.[0]?.properties?.variable || 'temperature'
+            const unit = mapData.azureData?.geojson?.features?.[0]?.properties?.unit || '°C'
+
+            const temperatureData = mapData.azureData.geojson.features.map((feature: any) => ({
+              latitude: feature.geometry.coordinates[1],
+              longitude: feature.geometry.coordinates[0],
+              value: feature.properties.value,
+              variable: feature.properties.variable,
+              unit: feature.properties.unit
+            }))
+
+            processTemperatureData(temperatureData, variable, unit)
+          }
+        } else {
+          console.log('⚠️ No valid rendering method available')
+          console.log('Debug info:', {
+            useTiles,
+            hasTileConfig: !!tileConfig,
+            hasOverlay: !!overlayUrl,
+            hasStatic: !!staticUrl,
+            hasBounds
           })
         }
 
-        // FIXED: Better variable detection for hover data
-        function processTemperatureData(temperatureData: any[]) {
+        // ====== MISSING: ADD PNG OVERLAY FUNCTION ======
+        function addPngOverlay() {
+          console.log('📸 ====== PNG OVERLAY FUNCTION ======')
+          
+          const overlayUrl = mapData.azureData?.overlay_url
+          const staticUrl = mapData.azureData?.static_url
+          
+          console.log('📸 URL Analysis:')
+          console.log('  - overlay_url:', overlayUrl)
+          console.log('  - static_url:', staticUrl)
+          
+          // Use overlay_url if available, fallback to static_url
+          const imageUrl = overlayUrl || staticUrl
+          
+          if (!imageUrl || !imageUrl.startsWith('http')) {
+            console.log('❌ No valid image URL for PNG overlay')
+            return
+          }
+          
+          console.log('📸 Using URL:', imageUrl.substring(0, 80) + '...')
+          
+          // Get bounds - prioritize backend bounds
+          let overlayBounds
+          if (mapData.azureData?.bounds) {
+            overlayBounds = mapData.azureData.bounds
+            console.log('✅ Using backend bounds:', overlayBounds)
+          } else if (mapData.bounds) {
+            overlayBounds = mapData.bounds
+            console.log('⚠️ Using mapData bounds:', overlayBounds)
+          } else {
+            overlayBounds = bounds
+            console.log('⚠️ Using default bounds:', overlayBounds)
+          }
+          
+          // Validate bounds
+          if (!overlayBounds || 
+              !isFinite(overlayBounds.north) || 
+              !isFinite(overlayBounds.south) ||
+              !isFinite(overlayBounds.east) || 
+              !isFinite(overlayBounds.west)) {
+            console.error('❌ Invalid overlay bounds:', overlayBounds)
+            return
+          }
+          
+          // Verify bounds order
+          if (overlayBounds.north <= overlayBounds.south) {
+            console.error('❌ North must be > South:', {
+              north: overlayBounds.north,
+              south: overlayBounds.south
+            })
+            return
+          }
+          
+          if (overlayBounds.west >= overlayBounds.east) {
+            console.error('❌ West must be < East:', {
+              west: overlayBounds.west,
+              east: overlayBounds.east
+            })
+            return
+          }
+          
+          console.log('✅ Bounds validated:', overlayBounds)
+          
+          // Create coordinates for Azure Maps ImageLayer
+          const coordinates: [number, number][] = [
+            [overlayBounds.west, overlayBounds.north],   // Top-left (NW)
+            [overlayBounds.east, overlayBounds.north],   // Top-right (NE)
+            [overlayBounds.east, overlayBounds.south],   // Bottom-right (SE)
+            [overlayBounds.west, overlayBounds.south]    // Bottom-left (SW)
+          ]
+          
+          console.log('📍 PNG overlay coordinates:')
+          console.log('  NW:', coordinates[0])
+          console.log('  NE:', coordinates[1])
+          console.log('  SE:', coordinates[2])
+          console.log('  SW:', coordinates[3])
+          
+          // Determine opacity based on URL type
+          const isTransparentOverlay = overlayUrl || imageUrl.includes('overlay') || imageUrl.includes('transparent')
+          const opacity = isTransparentOverlay ? 0.8 : 0.6
+          
+          // Create ImageLayer
+          const imageLayer = new atlas.layer.ImageLayer({
+            url: imageUrl,
+            coordinates: coordinates,
+            opacity: opacity,
+            visible: true
+          })
+          
+          console.log(`✅ PNG ImageLayer created with opacity: ${opacity}`)
+          
+          // Add to map
+          try {
+            map.layers.add(imageLayer, 'labels')
+            console.log('✅ PNG overlay added below labels')
+            
+            // Zoom to overlay bounds
+            map.setCamera({
+              bounds: [overlayBounds.west, overlayBounds.south, overlayBounds.east, overlayBounds.north],
+              padding: 40
+            })
+            console.log('✅ Camera set to overlay bounds')
+            
+          } catch (error) {
+            console.error('❌ Failed to add PNG overlay below labels:', error)
+            try {
+              map.layers.add(imageLayer)
+              console.log('✅ PNG overlay added to top')
+            } catch (error2) {
+              console.error('❌ Failed to add PNG overlay at all:', error2)
+            }
+          }
+        }
+
+        // ====== ENHANCED HOVER INTERACTIONS ======
+        function processTemperatureData(temperatureData: any[], variable: string, unit: string) {
           console.log('🎯 Processing hover interactions for', temperatureData.length, 'data points')
           
-          // Detect the actual variable from the data
-          let detectedVariable = 'SPI'
-          let unitDisplay = ''
-          
-          if (temperatureData.length > 0) {
-            const sample = temperatureData[0]
-            if (sample.spi !== undefined) {
-              detectedVariable = 'SPI'
-              unitDisplay = ''
-            } else if (sample.variable) {
-              detectedVariable = sample.variable
-              unitDisplay = sample.unit || getVariableUnit(sample.variable)
+          // ✅ FIXED: Better data validation
+          const validData = temperatureData.filter((point: any) => {
+            const lat = point.latitude
+            const lng = point.longitude  
+            const val = point.value
+            
+            const isValid = (
+              point && 
+              typeof lat === 'number' && isFinite(lat) && lat >= -90 && lat <= 90 &&
+              typeof lng === 'number' && isFinite(lng) && lng >= -180 && lng <= 180 &&
+              typeof val === 'number' && isFinite(val)
+            )
+            
+            if (!isValid) {
+              console.warn('❌ Invalid hover point filtered:', { 
+                latitude: lat, 
+                longitude: lng, 
+                value: val,
+                types: { 
+                  lat: typeof lat, 
+                  lng: typeof lng, 
+                  val: typeof val 
+                }
+              })
             }
+            
+            return isValid
+          })
+          
+          console.log(`✅ Valid hover data: ${validData.length} / ${temperatureData.length}`)
+          
+          if (validData.length === 0) {
+            console.error('❌ No valid data for hover interactions')
+            return
           }
           
-          console.log('🎯 Detected variable for hover:', detectedVariable, 'Unit:', unitDisplay)
+          // Calculate adaptive radius for hover detection
+          let avgDistance = 0.1 // Default
+          if (validData.length > 1) {
+            // Sample a few points to calculate average distance
+            const sampleSize = Math.min(10, validData.length - 1)
+            let totalDistance = 0
+            
+            for (let i = 0; i < sampleSize; i++) {
+              const p1 = validData[i]
+              const p2 = validData[i + 1]
+              const dist = Math.sqrt(
+                Math.pow(p2.longitude - p1.longitude, 2) + 
+                Math.pow(p2.latitude - p1.latitude, 2)
+              )
+              totalDistance += dist
+            }
+            
+            avgDistance = totalDistance / sampleSize
+          }
           
-          const avgDistance = temperatureData.length > 1 ? 
-            Math.sqrt((temperatureData[1].longitude - temperatureData[0].longitude) ** 2 + 
-                     (temperatureData[1].latitude - temperatureData[0].latitude) ** 2) : 0.1
-          
-          const adaptiveRadius = Math.max(0.1, Math.min(0.5, avgDistance * 2))
-          console.log('🎯 Hover detection radius:', adaptiveRadius, '(≈', (adaptiveRadius * 111).toFixed(1), 'km)')
+          const adaptiveRadius = Math.max(0.05, Math.min(0.5, avgDistance * 2))
+          console.log('🎯 Hover detection radius:', adaptiveRadius.toFixed(4), '(≈', (adaptiveRadius * 111).toFixed(1), 'km)')
 
           const popup = new atlas.Popup({
             pixelOffset: [0, -18],
@@ -530,6 +737,7 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           
           let hoverTimeout: NodeJS.Timeout | null = null
           
+          // Add mousemove event with improved detection
           map.events.add('mousemove', (e: any) => {
             if (hoverTimeout) {
               clearTimeout(hoverTimeout)
@@ -538,45 +746,37 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
             hoverTimeout = setTimeout(() => {
               const hoverPosition = e.position
               
+              if (!hoverPosition || !Array.isArray(hoverPosition) || hoverPosition.length !== 2) {
+                return
+              }
+              
               let nearestPoint = null
               let minDistance = Infinity
               
-              temperatureData.forEach((point: any) => {
-                if (point.latitude != null && point.longitude != null) {
-                  const distance = Math.sqrt(
-                    Math.pow(point.longitude - hoverPosition[0], 2) + 
-                    Math.pow(point.latitude - hoverPosition[1], 2)
-                  )
-                  
-                  if (distance < minDistance) {
-                    minDistance = distance
-                    nearestPoint = point
-                  }
+              validData.forEach((point: any) => {
+                const distance = Math.sqrt(
+                  Math.pow(point.longitude - hoverPosition[0], 2) + 
+                  Math.pow(point.latitude - hoverPosition[1], 2)
+                )
+                
+                if (distance < minDistance) {
+                  minDistance = distance
+                  nearestPoint = point
                 }
               })
               
               if (nearestPoint && minDistance < adaptiveRadius) {
-                let displayValue = 'N/A'
-                let variableDisplayName = getVariableDisplayName(detectedVariable)
-                
-                // Check multiple value sources
-                if (nearestPoint.spi !== undefined) {
-                  displayValue = nearestPoint.spi.toFixed(2)
-                  variableDisplayName = 'SPI (Drought Index)'
-                } else if (nearestPoint.value !== undefined) {
-                  displayValue = nearestPoint.value.toFixed(2)
-                } else if (nearestPoint.originalValue !== undefined) {
-                  displayValue = nearestPoint.originalValue.toFixed(2)
-                }
+                const displayValue = nearestPoint.value.toFixed(2)
+                const variableDisplay = getVariableDisplayName(variable)
                 
                 const popupContent = `
-                  <div style="padding: 8px; min-width: 140px; font-size: 12px;">
-                    <div style="font-weight: bold; color: #2563eb; margin-bottom: 4px;">${variableDisplayName}</div>
+                  <div style="padding: 8px; min-width: 140px; font-size: 12px; font-family: system-ui;">
+                    <div style="font-weight: bold; color: #2563eb; margin-bottom: 4px;">${variableDisplay}</div>
                     <div style="font-size: 14px; font-weight: bold; color: #dc2626;">
-                      ${displayValue} ${unitDisplay}
+                      ${displayValue} ${unit}
                     </div>
                     <div style="font-size: 10px; color: #6b7280; margin-top: 4px;">
-                      ${nearestPoint.latitude?.toFixed(3)}°, ${nearestPoint.longitude?.toFixed(3)}°
+                      ${nearestPoint.latitude.toFixed(3)}°, ${nearestPoint.longitude.toFixed(3)}°
                     </div>
                   </div>
                 `
@@ -589,7 +789,7 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
               } else {
                 popup.close()
               }
-            }, 50)
+            }, 100) // Increased debounce to reduce errors
           })
           
           map.events.add('mouseleave', () => {
@@ -600,33 +800,23 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           })
           
           map.getCanvasContainer().style.cursor = 'crosshair'
-          
-          console.log('✅ Hover interactions ready for', temperatureData.length, 'points')
-        }
-
-        // Helper functions
-        function getVariableUnit(variable: string): string {
-          const unitMap: { [key: string]: string } = {
-            'SPI': '', 'spi': '',
-            'Tair': '°C', 'temperature': '°C',
-            'Rainf': 'mm/hr', 'precipitation': 'mm/hr'
-          }
-          return unitMap[variable] || ''
+          console.log('✅ Hover interactions ready for', validData.length, 'points')
         }
 
         function getVariableDisplayName(variable: string): string {
           const nameMap: { [key: string]: string } = {
-            'SPI': 'SPI (Drought Index)',
-            'spi': 'SPI (Drought Index)',
             'Tair': 'Air Temperature',
-            'temperature': 'Air Temperature',
-            'Rainf': 'Precipitation'
+            'temperature': 'Temperature',
+            'temp': 'Temperature',
+            'Rainf': 'Precipitation',
+            'precipitation': 'Precipitation'
           }
           return nameMap[variable] || variable.replace(/_/g, ' ')
         }
 
       }, 1500)
 
+      // Set initial camera
       map.setCamera({
         bounds: [bounds.west, bounds.south, bounds.east, bounds.north],
         padding: 40
