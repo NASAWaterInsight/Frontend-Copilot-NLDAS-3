@@ -12,6 +12,12 @@ export interface MapData {
     }
     zoom: number
     azureData?: {
+      // Primary data sources
+      geotiff_url?: string  // ✅ ADD THIS - Direct GeoTIFF URL
+      static_url?: string   // PNG with legend
+      overlay_url?: string  // Legacy overlay
+      
+      // Data arrays
       geojson?: {
         type: string
         features: Array<{
@@ -21,25 +27,63 @@ export interface MapData {
             coordinates: [number, number]
           }
           properties: {
-            value: number
-            variable: string
-            unit: string
+            value?: number
+            spi?: number  // ✅ ADD THIS for SPI data
+            variable?: string
+            unit?: string
+            [key: string]: any
           }
         }>
       }
-      overlay_url?: string
-      static_url?: string
+      temperature_data?: Array<{
+        latitude: number
+        longitude: number
+        value?: number
+        spi?: number  // ✅ ADD THIS
+        variable?: string
+        unit?: string
+      }>
+      
+      // Metadata
       variable_info?: {
         name: string
         unit: string
         displayName: string
       }
+      bounds?: {
+        north: number
+        south: number
+        east: number
+        west: number
+      }
+      
+      // Analysis results
+      extreme_regions?: Array<{
+        latitude: number
+        longitude: number
+        value: number
+        rank?: number
+        severity?: string
+        location?: string
+      }>
+      analysis_type?: string
+      
+      // Backend response
+      colormap?: any
       data_type?: string
       raw_response?: any
-      // Legacy properties for backward compatibility
+      
+      // Legacy compatibility
       map_config?: any
-      temperature_data?: any
       weather_data?: any
       legend?: any
     }
+  }
+  
+  export interface Message {
+    id: string
+    role: 'user' | 'assistant'
+    text: string
+    imageUrl?: string
+    mapData?: MapData
   }

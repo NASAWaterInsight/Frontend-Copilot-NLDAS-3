@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { callMultiAgentFunction } from '../services/multiAgent'
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch'
 import AzureMapView from './AzureMapView'
-import { getStableUserId, clearUserId, getCurrentUserId } from '../utils/userIdentity'
+import { getStableUserId, clearUserId } from '../utils/userIdentity'
 import type { Message, MapData } from '../types'
 
 // Get Azure Maps credentials from environment variables
@@ -43,12 +43,26 @@ export default function Chat() {
   // Handle new conversation
   const handleNewConversation = () => {
     clearUserId()
-    // Generate new user ID on next request
     setUserId('')
     setMessages([])
     setError(null)
     setDebug(null)
     console.log('🔄 Cleared user ID for fresh conversation')
+  }
+
+  // Add this debug function after handleNewConversation
+  const forceDebugLog = () => {
+    console.log('🔥 FORCE DEBUG LOG TEST')
+    console.log('Environment variables:', {
+      AZURE_KEY: !!AZURE_MAPS_KEY,
+      API_URL: import.meta.env.VITE_API_BASE_URL,
+      DEV_MODE: import.meta.env.DEV
+    })
+    console.log('Current messages:', messages.length)
+    console.log('Browser info:', {
+      userAgent: navigator.userAgent,
+      location: window.location.href
+    })
   }
 
   // Function to determine map bounds based on query
@@ -67,61 +81,83 @@ export default function Chat() {
     if (lowerQuery.includes('texas')) {
       return { north: 36.5, south: 25.8, east: -93.5, west: -106.6 }
     }
+    if (lowerQuery.includes('michigan')) {
+      return { north: 48.3, south: 41.7, east: -82.4, west: -90.4 }
+    }
     
     // Default bounds (continental US)
     return { north: 49.0, south: 25.0, east: -66.0, west: -125.0 }
   }
 
-  // Add this helper function after the getMapBounds function
+  // Helper function for display names
   function getDisplayName(variable: string): string {
     const variableMap: { [key: string]: string } = {
-      // Temperature variables
       'Tair': 'Air Temperature',
       'Tair_f_inst': 'Air Temperature',
-      
-      // Precipitation variables
       'Rainf_f_tavg': 'Precipitation',
       'Rainf': 'Precipitation',
       'Snowf_tavg': 'Snowfall',
       'Evap_tavg': 'Evaporation',
-      
-      // Pressure variables
       'Psurf': 'Surface Pressure',
       'Psurf_f_inst': 'Surface Pressure',
-      
-      // Wind variables
       'Wind_f_inst': 'Wind Speed',
       'Wind_f_tavg': 'Wind Speed',
       'Uwind': 'Wind Speed (U)',
       'Vwind': 'Wind Speed (V)',
-      
-      // Humidity variables
       'Qair_f_inst': 'Humidity',
       'Qair': 'Humidity',
       'RelHum': 'Relative Humidity',
-      
-      // Radiation variables
       'SWdown_f_tavg': 'Solar Radiation',
       'SWdown': 'Solar Radiation',
       'LWdown_f_tavg': 'Longwave Radiation',
       'LWdown': 'Longwave Radiation',
-      
-      // Soil variables
       'SoilMoi0_10cm': 'Soil Moisture',
       'SoilMoi10_40cm': 'Soil Moisture',
       'SoilTemp0_10cm': 'Soil Temperature',
-      
-      // Energy variables
       'LatHeat': 'Latent Heat',
       'SensHeat': 'Sensible Heat',
       'GrndHeat': 'Ground Heat',
-      
-      // Water balance
       'Runoff': 'Surface Runoff',
       'Baseflow': 'Baseflow',
-      'Streamflow': 'Streamflow'
+      'Streamflow': 'Streamflow',
+      'SPI': 'SPI (Drought Index)',
+      'SPI3': 'SPI-3 (3-Month Drought)',
+      'temperature': 'Temperature'
     }
     return variableMap[variable] || variable.replace(/_/g, ' ').replace(/f inst|f tavg/g, '').trim()
+  }
+
+  // Helper function to get variable unit
+  function getVariableUnit(variable: string): string {
+    const unitMap: { [key: string]: string } = {
+      'Tair': '°C',
+      'temperature': '°C',
+      'Rainf': 'mm/hr',
+      'Psurf': 'kPa',
+      'Wind': 'm/s',
+      'Qair': 'kg/kg',
+      'SPI': '',
+      'SPI3': ''
+    }
+    return unitMap[variable] || ''
+  }
+
+  // Helper function to get severity label
+  function getSeverityLabel(analysisType: string, value: number): string {
+    if (analysisType.includes('temperature')) {
+      if (analysisType.includes('coldest')) return 'coldest'
+      if (analysisType.includes('hottest')) return 'hottest'
+      return value < 15 ? 'cold' : 'warm'
+    }
+    if (analysisType.includes('wet')) return 'wettest'
+    if (analysisType.includes('dry')) return 'driest'
+    if (analysisType.includes('drought')) {
+      if (value <= -2.0) return 'extreme drought'
+      if (value <= -1.5) return 'severe drought'
+      if (value <= -1.0) return 'moderate drought'
+      return 'mild drought'
+    }
+    return 'extreme'
   }
 
   async function handleSubmit(e?: React.FormEvent) {
@@ -142,25 +178,96 @@ export default function Chat() {
       
       const r = resp.response
       
-      console.log('=== UNIFIED BACKEND STRUCTURE DEBUG ===')
-      console.log('Response status:', r?.status)
-      console.log('Has static_url:', !!r?.static_url)
-      console.log('Has overlay_url:', !!r?.overlay_url)
-      console.log('Has geojson:', !!r?.geojson)
-      console.log('Has temperature_data:', !!r?.temperature_data)
-      console.log('Has map_config:', !!r?.map_config)
-      console.log('Has bounds:', !!r?.bounds)
-      console.log('Temperature data count:', r?.temperature_data?.length || 0)
-      console.log('GeoJSON features count:', r?.geojson?.features?.length || 0)
-      console.log('Map config:', r?.map_config)
-      console.log('=== END UNIFIED DEBUG ===')
+      console.log('=== BACKEND RESPONSE STRUCTURE ===')
+      console.log('Full response keys:', Object.keys(r || {}))
+      console.log('geotiff_url:', r?.geotiff_url)
+      console.log('static_url:', r?.static_url)
+      console.log('overlay_url:', r?.overlay_url)
+      console.log('geojson features:', r?.geojson?.features?.length)
+      console.log('temperature_data:', r?.temperature_data?.length)
+      console.log('bounds:', r?.bounds)
+      console.log('=== END RESPONSE STRUCTURE ===')
+
+      // ✅ Check for visualization data with proper priority
+      const hasGeoTiffUrl = !!(r?.geotiff_url)
+      const hasStaticUrl = !!(r?.static_url)
+      const hasOverlayUrl = !!(r?.overlay_url)
+      let hasGeoJsonData = !!(r?.geojson?.features?.length > 0)
+      let hasTemperatureData = !!(r?.temperature_data?.length > 0)
+
+      console.log('📊 Data availability (initial):', {
+        hasGeoTiffUrl,
+        hasStaticUrl,
+        hasOverlayUrl,
+        hasGeoJsonData,
+        hasTemperatureData
+      })
+
+      // ✅ Extract and validate GeoJSON to prevent NaN
+      if (hasGeoJsonData) {
+        const validFeatures = r.geojson.features.filter((f: any) => {
+          const lat = f.geometry?.coordinates?.[1]
+          const lng = f.geometry?.coordinates?.[0]
+          const value = f.properties?.value ?? f.properties?.spi ?? f.properties?.temperature
+          
+          const isValid = (
+            isFinite(lat) && 
+            isFinite(lng) && 
+            isFinite(value)
+          )
+          
+          if (!isValid) {
+            console.warn('❌ Invalid feature filtered out:', { 
+              lat, lng, value, 
+              properties: f.properties 
+            })
+          }
+          
+          return isValid
+        })
+        
+        console.log(`✅ Valid GeoJSON features: ${validFeatures.length} / ${r.geojson.features.length}`)
+        
+        // Replace with valid features only
+        r.geojson.features = validFeatures
+        hasGeoJsonData = validFeatures.length > 0
+      }
+
+      // ✅ Validate temperature data
+      if (hasTemperatureData) {
+        const validTempData = r.temperature_data.filter((point: any) => {
+          const isValid = (
+            isFinite(point.latitude) && 
+            isFinite(point.longitude) && 
+            isFinite(point.value ?? point.spi ?? 0)
+          )
+          
+          if (!isValid) {
+            console.warn('❌ Invalid temperature point filtered out:', point)
+          }
+          
+          return isValid
+        })
+        
+        console.log(`✅ Valid temperature data: ${validTempData.length} / ${r.temperature_data.length}`)
+        r.temperature_data = validTempData
+        hasTemperatureData = validTempData.length > 0
+      }
+
+      console.log('📊 Data availability (after validation):', {
+        hasGeoTiffUrl,
+        hasStaticUrl,
+        hasOverlayUrl,
+        hasGeoJsonData,
+        hasTemperatureData
+      })
       
       let imageUrl = null
       let mapData: MapData | undefined
       let cleanContent = r?.content || ''
       let hasRegionSummary = false
 
-      // --- Extract regions analysis (drought, temperature extremes, wettest, etc.) ---
+      // Extract regions analysis (drought, temperature extremes, etc.)
       let extremeRegions = 
         r?.analysis_data?.result?.regions ||
         r?.regions ||
@@ -169,11 +276,9 @@ export default function Chat() {
         null
 
       console.log('🔍 Extreme regions detection:', {
-        'r?.analysis_data?.result?.regions': r?.analysis_data?.result?.regions,
-        'r?.regions': r?.regions,
-        'extremeRegions final': extremeRegions,
-        'is array': Array.isArray(extremeRegions),
-        'length': extremeRegions?.length
+        found: extremeRegions,
+        isArray: Array.isArray(extremeRegions),
+        length: extremeRegions?.length
       })
 
       // If content is structured, blank it before prepend
@@ -188,16 +293,16 @@ export default function Chat() {
       // Get analysis info from backend
       const analysisType = r?.analysis_data?.result?.analysis_type || 
                           r?.analysis_type || 
-                          'extreme temperature regions'  // Default for your backend response
+                          'extreme temperature regions'
       const variable = r?.analysis_data?.result?.variable || 
                       r?.variable || 
                       r?.temperature_data?.[0]?.variable || 
                       r?.geojson?.features?.[0]?.properties?.variable || 
-                      'Tair'  // Default from your response
+                      'temperature'
 
       console.log('📊 Analysis metadata:', { analysisType, variable })
 
-      // Process and display extreme regions (temperature, wettest, drought, etc.)
+      // Process and display extreme regions
       if (Array.isArray(extremeRegions) && extremeRegions.length > 0) {
         console.log('✅ Processing extreme regions:', extremeRegions)
         
@@ -206,12 +311,14 @@ export default function Chat() {
           .filter(p => {
             const isValid = p && isFinite(p.latitude) && isFinite(p.longitude) && 
                            (isFinite(p.value) || isFinite(p.spi_value))
-            console.log('🔍 Region validation:', { region: p, isValid })
+            if (!isValid) {
+              console.log('🔍 Invalid region filtered:', p)
+            }
             return isValid
           })
           .map((p, idx) => {
             const value = isFinite(p.value) ? p.value : p.spi_value
-            const normalized = {
+            return {
               latitude: p.latitude,
               longitude: p.longitude,
               value: value,
@@ -219,11 +326,9 @@ export default function Chat() {
               severity: p.severity || getSeverityLabel(analysisType, value),
               location: p.location || `${p.latitude.toFixed(2)}, ${p.longitude.toFixed(2)}`
             }
-            console.log('🎯 Normalized region:', normalized)
-            return normalized
           })
 
-        console.log('📋 Valid regions after processing:', validRegions)
+        console.log('📋 Valid regions after processing:', validRegions.length)
 
         if (validRegions.length > 0) {
           // Create formatted summary
@@ -237,8 +342,6 @@ export default function Chat() {
           cleanContent = summaryHeader + (typeof cleanContent === 'string' ? cleanContent : '')
           hasRegionSummary = true
 
-          console.log('📝 Summary created:', summaryHeader)
-
           // Precompute bounds for map
           const lats = validRegions.map((p: any) => p.latitude)
           const lngs = validRegions.map((p: any) => p.longitude)
@@ -251,10 +354,9 @@ export default function Chat() {
 
           console.log('🗺️ Region bounds calculated:', regionBounds)
 
-          // Create mapData for regions visualization
-          const hasMapArtifacts = r?.static_url || r?.overlay_url || r?.geotiff_url
-          console.log('🎨 Map artifacts check:', { hasMapArtifacts, static_url: r?.static_url, overlay_url: r?.overlay_url, geotiff_url: r?.geotiff_url })
-
+          // Create mapData for regions visualization if no other map artifacts
+          const hasMapArtifacts = hasStaticUrl || hasOverlayUrl || hasGeoTiffUrl
+          
           if (!hasMapArtifacts) {
             console.log('📍 Creating standalone region map...')
             
@@ -314,98 +416,113 @@ export default function Chat() {
                 data_type: 'extreme_regions',
                 raw_response: r
               }
-            } as MapData
+            }
 
-            console.log('🏗️ Created standalone mapData:', mapData)
+            console.log('🏗️ Created standalone mapData for regions')
           } else {
             // Attach regions to existing map artifacts
-            console.log('🔗 Attaching regions to existing map artifacts...')
+            console.log('🔗 Attaching regions to existing map artifacts')
             ;(r as any).__extreme_regions = validRegions
             ;(r as any).__region_bounds = regionBounds
           }
         }
-      } else {
-        console.log('❌ No valid extreme regions found or not array:', { extremeRegions, isArray: Array.isArray(extremeRegions) })
       }
-
-      // Helper function to get severity label
-      function getSeverityLabel(analysisType: string, value: number): string {
-        if (analysisType.includes('temperature')) {
-          if (analysisType.includes('coldest')) return 'coldest'
-          if (analysisType.includes('hottest')) return 'hottest'
-          return value < 15 ? 'cold' : 'warm'
-        }
-        if (analysisType.includes('wet')) return 'wettest'
-        if (analysisType.includes('dry')) return 'driest'
-        if (analysisType.includes('drought')) {
-          if (value <= -2.0) return 'extreme drought'
-          if (value <= -1.5) return 'severe drought'
-          if (value <= -1.0) return 'moderate drought'
-          return 'mild drought'
-        }
-        return 'extreme'
-      }
-
-      // Helper function to get variable unit
-      function getVariableUnit(variable: string): string {
-        const unitMap: { [key: string]: string } = {
-          'Tair': '°C',
-          'Rainf': 'mm/hr',
-          'Psurf': 'kPa',
-          'Wind': 'm/s',
-          'Qair': 'kg/kg',
-          'SPI': '',
-          'SPI3': ''
-        }
-        return unitMap[variable] || ''
-      }
-
-      // Check for new unified backend structure
-      const hasStaticUrl = !!r?.static_url
-      const hasOverlayUrl = !!r?.overlay_url
-      const hasTemperatureData = !!r?.temperature_data && r.temperature_data.length > 0
-      const hasGeoJsonData = !!r?.geojson?.features && r.geojson.features.length > 0
-      const hasBounds = !!r?.bounds
-      const hasMapConfig = !!r?.map_config
-
-      console.log('Unified backend features:', { 
-        hasStaticUrl, hasOverlayUrl, hasTemperatureData, 
-        hasGeoJsonData, hasBounds, hasMapConfig 
-      })
 
       // Build mapData if map artifacts exist OR if we have regions
-      if (hasStaticUrl || hasOverlayUrl || hasGeoJsonData || hasTemperatureData || mapData) {
+      if (hasStaticUrl || hasOverlayUrl || hasGeoJsonData || hasTemperatureData || hasGeoTiffUrl || mapData) {
         if (!mapData) {
           console.log('✅ Building mapData from backend artifacts')
           
-          // Use existing mapData construction logic...
-          let mapBounds = r.bounds || (r as any).__region_bounds
+          // Better bounds calculation to handle NaN values
+          let mapBounds = null
           let mapCenter = r.map_config?.center
           
-          if (!mapBounds && hasTemperatureData) {
-            const lats = r.temperature_data.map((p: any) => p.latitude)
-            const lngs = r.temperature_data.map((p: any) => p.longitude)
-            mapBounds = {
-              north: Math.max(...lats), south: Math.min(...lats),
-              east: Math.max(...lngs), west: Math.min(...lngs)
+          // Try to get bounds from backend first
+          if (r.bounds && isFinite(r.bounds.north) && isFinite(r.bounds.south) && 
+              isFinite(r.bounds.east) && isFinite(r.bounds.west)) {
+            mapBounds = r.bounds
+            console.log('📊 Using backend bounds:', mapBounds)
+          } 
+          // Calculate bounds from geojson if available and valid
+          else if (hasGeoJsonData) {
+            const features = r.geojson.features
+            const validCoords = features
+              .map((f: any) => ({
+                lat: f.geometry.coordinates[1],
+                lng: f.geometry.coordinates[0]
+              }))
+              .filter((coord: any) => isFinite(coord.lat) && isFinite(coord.lng))
+            
+            if (validCoords.length > 0) {
+              const lats = validCoords.map((c: any) => c.lat)
+              const lngs = validCoords.map((c: any) => c.lng)
+              mapBounds = {
+                north: Math.max(...lats), 
+                south: Math.min(...lats),
+                east: Math.max(...lngs), 
+                west: Math.min(...lngs)
+              }
+              console.log('📊 Calculated bounds from GeoJSON:', mapBounds)
+            } else {
+              console.error('❌ All GeoJSON coordinates are invalid (NaN)')
+            }
+          }
+          // Calculate bounds from temperature data
+          else if (hasTemperatureData) {
+            const validTempData = r.temperature_data.filter((p: any) => 
+              isFinite(p.latitude) && isFinite(p.longitude)
+            )
+            
+            if (validTempData.length > 0) {
+              const lats = validTempData.map((p: any) => p.latitude)
+              const lngs = validTempData.map((p: any) => p.longitude)
+              mapBounds = {
+                north: Math.max(...lats), 
+                south: Math.min(...lats),
+                east: Math.max(...lngs), 
+                west: Math.min(...lngs)
+              }
+              console.log('📊 Calculated bounds from temperature data:', mapBounds)
             }
           }
           
-          if (!mapCenter && mapBounds) {
-            mapCenter = [(mapBounds.west + mapBounds.east) / 2, (mapBounds.north + mapBounds.south) / 2]
+          // Fallback to query-based bounds if all else fails
+          if (!mapBounds) {
+            mapBounds = getMapBounds(currentQuery)
+            console.log('📊 Using query-based fallback bounds:', mapBounds)
           }
           
-          const latPadding = mapBounds ? (mapBounds.north - mapBounds.south) * 0.1 : 1
-          const lngPadding = mapBounds ? (mapBounds.east - mapBounds.west) * 0.1 : 1
+          // Calculate center from bounds
+          if (!mapCenter && mapBounds) {
+            mapCenter = [
+              (mapBounds.west + mapBounds.east) / 2, 
+              (mapBounds.north + mapBounds.south) / 2
+            ]
+            console.log('📊 Calculated center:', mapCenter)
+          }
+          
+          // Add padding to bounds
+          const latPadding = mapBounds ? Math.abs(mapBounds.north - mapBounds.south) * 0.1 : 1
+          const lngPadding = mapBounds ? Math.abs(mapBounds.east - mapBounds.west) * 0.1 : 1
           const paddedBounds = mapBounds ? {
-            north: mapBounds.north + latPadding, south: mapBounds.south - latPadding,
-            east: mapBounds.east + lngPadding, west: mapBounds.west - lngPadding
+            north: mapBounds.north + latPadding, 
+            south: mapBounds.south - latPadding,
+            east: mapBounds.east + lngPadding, 
+            west: mapBounds.west - lngPadding
           } : getMapBounds(currentQuery)
           
           const center = mapCenter ? { lat: mapCenter[1], lng: mapCenter[0] } : {
             lat: (paddedBounds.north + paddedBounds.south) / 2,
             lng: (paddedBounds.east + paddedBounds.west) / 2
           }
+          
+          console.log('🗺️ Final map configuration:', {
+            originalBounds: mapBounds,
+            paddedBounds: paddedBounds,
+            center: center,
+            zoom: r.map_config?.zoom || 7,
+            geotiffUrl: r.geotiff_url
+          })
           
           mapData = {
             map_url: r.overlay_url || r.static_url || '',
@@ -415,9 +532,10 @@ export default function Chat() {
             azureData: {
               static_url: r.static_url,
               overlay_url: r.overlay_url,
+              geotiff_url: r.geotiff_url,  // ✅ Direct access from root level
               temperature_data: r.temperature_data || [],
               geojson: r.geojson,
-              bounds: r.bounds,
+              bounds: mapBounds,  // Original bounds without padding
               map_config: r.map_config,
               extreme_regions: (r as any).__extreme_regions || undefined,
               variable_info: {
@@ -427,9 +545,25 @@ export default function Chat() {
               },
               analysis_type: analysisType,
               data_type: 'unified_backend',
-              raw_response: r
+              raw_response: r  // Pass entire raw response
             }
           }
+          
+          console.log('🏗️ Created mapData with URLs:', {
+            geotiff_url: mapData.azureData?.geotiff_url,
+            static_url: mapData.azureData?.static_url,
+            overlay_url: mapData.azureData?.overlay_url
+          })
+          
+          console.log('🏗️ ====== FINAL MAPDATA STRUCTURE ======')
+          console.log('mapData created:', !!mapData)
+          if (mapData) {
+            console.log('mapData.azureData.geotiff_url:', mapData.azureData?.geotiff_url)
+            console.log('Is it a string?:', typeof mapData.azureData?.geotiff_url === 'string')
+            console.log('Does it start with http?:', mapData.azureData?.geotiff_url?.startsWith('http'))
+            console.log('Full mapData.azureData:', mapData.azureData)
+          }
+          console.log('====== END MAPDATA STRUCTURE ======')
         }
         
         imageUrl = r.static_url
@@ -468,7 +602,11 @@ export default function Chat() {
         response: err?.response
       })
       setError(`Connection failed: ${err?.message || 'Unknown error'}`)
-      setMessages((prev) => [...prev, { id: String(Date.now()), role: 'assistant', text: `Request failed: ${err?.message || 'Backend connection error'}` }])
+      setMessages((prev) => [...prev, { 
+        id: String(Date.now()), 
+        role: 'assistant', 
+        text: `Request failed: ${err?.message || 'Backend connection error'}` 
+      }])
     } finally {
       setLoading(false)
     }
@@ -489,6 +627,15 @@ export default function Chat() {
               
               {/* Session info and controls */}
               <div className="flex items-center gap-2">
+                {/* Add debug button */}
+                <button
+                  onClick={forceDebugLog}
+                  className="px-2 py-1 text-xs bg-red-100 hover:bg-red-200 text-red-700 rounded-md transition"
+                  title="Force debug logging"
+                >
+                  🔥 Debug
+                </button>
+                
                 {messages.length > 0 && (
                   <button
                     onClick={handleNewConversation}
@@ -519,7 +666,7 @@ export default function Chat() {
               <div className="text-center text-gray-500">
                 <div>Type a query to generate a visualization</div>
                 <div className="text-xs text-gray-400 mt-1">
-                  💡 Try: "show temperature in Toronto" - Now with conversation memory!
+                  💡 Try: "show temperature in Michigan" - Now with conversation memory!
                 </div>
                 {userId && (
                   <div className="text-xs text-gray-300 mt-2">
@@ -551,7 +698,9 @@ export default function Chat() {
                             🗺️ Interactive Azure Maps • {
                               m.mapData.azureData?.geojson?.features?.length 
                                 ? `Click points for details • ${m.mapData.azureData.geojson.features.length} data points`
-                                : 'GeoTIFF overlay with SPI drought data'
+                                : m.mapData.azureData?.geotiff_url
+                                ? 'GeoTIFF overlay with data visualization'
+                                : 'Interactive map'
                             }
                           </span>
                           <span className="text-xs text-green-600">Live Data</span>
@@ -641,7 +790,7 @@ export default function Chat() {
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Ask about hydrology data... (add 'azure maps' for interactive maps)"
+                placeholder="Ask about hydrology data... (e.g., 'show temperature in Michigan')"
                 className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 disabled={loading}
               />

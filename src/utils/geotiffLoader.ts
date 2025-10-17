@@ -1,414 +1,341 @@
 import * as atlas from 'azure-maps-control'
 
-// Load GeoTIFF libraries dynamically
+// Load required libraries for GeoTIFF processing
 export async function loadGeoTiffLibraries() {
-  if (!(window as any).GeoTIFF) {
-    const script = document.createElement('script')
-    script.src = 'https://cdn.jsdelivr.net/npm/geotiff@2.0.7/dist-browser/geotiff.js'
-    document.head.appendChild(script)
-    
-    return new Promise((resolve) => {
-      script.onload = resolve
-    })
-  }
-}
-
-// Dynamic color mapping based on variable type and backend metadata
-export function getVariableColor(value: number, variable: string, colormap?: any): [number, number, number] {
-  // Handle NaN/null values
-  if (isNaN(value) || value === null || value === undefined) {
-    return [255, 255, 255] // White for no data
-  }
-
-  // Use backend-provided colormap if available
-  if (colormap && colormap.colors && colormap.values) {
-    return interpolateColormap(value, colormap.colors, colormap.values)
-  }
-
-  // Fallback to variable-specific color schemes
-  const variableType = detectVariableType(variable)
+  const scripts = [
+    'https://cdn.jsdelivr.net/npm/geotiff@2.0.7/dist-browser/geotiff.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.min.js',
+    'https://cdn.jsdelivr.net/npm/geotiff-geokeys-to-proj4@2022.9.7/main-dist.min.js'
+  ]
   
-  switch (variableType) {
-    case 'spi':
-    case 'drought':
-      return getSPIColor(value)
-    case 'temperature':
-      return getTemperatureColor(value)
-    case 'precipitation':
-      return getPrecipitationColor(value) 
-    case 'pressure':
-      return getPressureColor(value)
-    case 'wind':
-      return getWindColor(value)
-    case 'humidity':
-      return getHumidityColor(value)
-    case 'radiation':
-      return getRadiationColor(value)
-    case 'soil':
-      return getSoilColor(value)
-    default:
-      return getGenericColor(value)
-  }
-}
-
-// Interpolate backend-provided colormap
-function interpolateColormap(value: number, colors: string[], values: number[]): [number, number, number] {
-  if (values.length !== colors.length) {
-    return [128, 128, 128] // Gray fallback
-  }
-
-  // Find position in colormap
-  for (let i = 0; i < values.length - 1; i++) {
-    if (value >= values[i] && value <= values[i + 1]) {
-      const ratio = (value - values[i]) / (values[i + 1] - values[i])
-      const color1 = hexToRgb(colors[i])
-      const color2 = hexToRgb(colors[i + 1])
-      
-      return [
-        Math.round(color1[0] + (color2[0] - color1[0]) * ratio),
-        Math.round(color1[1] + (color2[1] - color1[1]) * ratio),
-        Math.round(color1[2] + (color2[2] - color1[2]) * ratio)
-      ]
+  for (const src of scripts) {
+    if (!document.querySelector(`script[src="${src}"]`)) {
+      const script = document.createElement('script')
+      script.src = src
+      document.head.appendChild(script)
+      await new Promise(resolve => { script.onload = resolve })
     }
   }
-  
-  // Outside range - use nearest color
-  if (value < values[0]) return hexToRgb(colors[0])
-  return hexToRgb(colors[colors.length - 1])
 }
 
-// Convert hex color to RGB
-function hexToRgb(hex: string): [number, number, number] {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
-  return result ? [
-    parseInt(result[1], 16),
-    parseInt(result[2], 16),
-    parseInt(result[3], 16)
-  ] : [128, 128, 128]
-}
-
-// Detect variable type from name
-function detectVariableType(variable: string): string {
-  const varLower = variable.toLowerCase()
-  
-  if (varLower.includes('spi') || varLower.includes('drought')) return 'spi'
-  if (varLower.includes('temp') || varLower.includes('tair')) return 'temperature'
-  if (varLower.includes('rain') || varLower.includes('precip')) return 'precipitation'
-  if (varLower.includes('press') || varLower.includes('psurf')) return 'pressure'
-  if (varLower.includes('wind') || varLower.includes('uwind') || varLower.includes('vwind')) return 'wind'
-  if (varLower.includes('humid') || varLower.includes('qair')) return 'humidity'
-  if (varLower.includes('radiation') || varLower.includes('swdown') || varLower.includes('lwdown')) return 'radiation'
-  if (varLower.includes('soil')) return 'soil'
-  
-  return 'generic'
-}
-
-// SPI-specific color mapping (existing)
-function getSPIColor(spiValue: number): [number, number, number] {
-  if (spiValue <= -2.0) return [139, 0, 0]        // Dark red (extreme drought)
-  if (spiValue <= -1.5) return [255, 0, 0]        // Red (severe drought)
-  if (spiValue <= -1.0) return [255, 140, 0]      // Orange (moderate drought)
-  if (spiValue <= -0.5) return [255, 255, 0]      // Yellow (mild drought)
-  if (spiValue <= 0.5) return [144, 238, 144]     // Light green (near normal)
-  if (spiValue <= 1.0) return [0, 191, 255]       // Light blue (wet)
-  if (spiValue <= 1.5) return [0, 0, 255]         // Blue (very wet)
-  return [0, 0, 139]                               // Dark blue (extremely wet)
-}
-
-// Temperature color mapping (blue to red)
-function getTemperatureColor(temp: number): [number, number, number] {
-  // Assuming temp range -40°C to 50°C
-  const normalized = Math.max(0, Math.min(1, (temp + 40) / 90))
-  const r = Math.round(255 * normalized)
-  const b = Math.round(255 * (1 - normalized))
-  const g = Math.round(128 * Math.sin(normalized * Math.PI))
-  return [r, g, b]
-}
-
-// Precipitation color mapping (white to blue)
-function getPrecipitationColor(precip: number): [number, number, number] {
-  // Assuming precip range 0 to 100 mm
-  const normalized = Math.max(0, Math.min(1, precip / 100))
-  const r = Math.round(255 * (1 - normalized))
-  const g = Math.round(255 * (1 - normalized * 0.5))
-  const b = 255
-  return [r, g, b]
-}
-
-// Pressure color mapping (purple to yellow)
-function getPressureColor(pressure: number): [number, number, number] {
-  // Assuming pressure range 980 to 1040 hPa
-  const normalized = Math.max(0, Math.min(1, (pressure - 980) / 60))
-  const r = Math.round(128 + 127 * normalized)
-  const g = Math.round(0 + 255 * normalized)
-  const b = Math.round(128 * (1 - normalized))
-  return [r, g, b]
-}
-
-// Wind color mapping (green to red)
-function getWindColor(wind: number): [number, number, number] {
-  // Assuming wind range 0 to 50 m/s
-  const normalized = Math.max(0, Math.min(1, wind / 50))
-  const r = Math.round(255 * normalized)
-  const g = Math.round(255 * (1 - normalized))
-  const b = 0
-  return [r, g, b]
-}
-
-// Humidity color mapping (brown to cyan)
-function getHumidityColor(humidity: number): [number, number, number] {
-  // Assuming humidity range 0 to 1
-  const normalized = Math.max(0, Math.min(1, humidity))
-  const r = Math.round(139 * (1 - normalized))
-  const g = Math.round(69 + 186 * normalized)
-  const b = Math.round(19 + 236 * normalized)
-  return [r, g, b]
-}
-
-// Radiation color mapping (black to yellow)
-function getRadiationColor(radiation: number): [number, number, number] {
-  // Assuming radiation range 0 to 1000 W/m²
-  const normalized = Math.max(0, Math.min(1, radiation / 1000))
-  const r = Math.round(255 * normalized)
-  const g = Math.round(255 * normalized)
-  const b = Math.round(100 * normalized)
-  return [r, g, b]
-}
-
-// Soil color mapping (yellow to brown)
-function getSoilColor(soil: number): [number, number, number] {
-  // Assuming soil moisture 0 to 1
-  const normalized = Math.max(0, Math.min(1, soil))
-  const r = Math.round(255 - 100 * normalized)
-  const g = Math.round(255 - 155 * normalized)
-  const b = Math.round(0 + 139 * normalized)
-  return [r, g, b]
-}
-
-// Generic color mapping (grayscale with color hints)
-function getGenericColor(value: number): [number, number, number] {
-  // Normalize assuming range -2 to 2
-  const normalized = Math.max(0, Math.min(1, (value + 2) / 4))
-  const base = Math.round(255 * normalized)
-  return [base, base, Math.max(100, base)]
-}
-
-// Process GeoTIFF for Azure Maps overlay
+// Load GeoTIFF overlay using Microsoft's official method
 export async function loadGeoTiffOverlay(
   geotiffUrl: string, 
   map: atlas.Map,
   variable: string = 'spi',
   colormap?: any
 ): Promise<atlas.layer.ImageLayer | null> {
+  console.log('🔧 ====== Microsoft Method with Projection Fix ======')
+  console.log('GeoTIFF URL:', geotiffUrl)
+  
   try {
-    console.log('🗺️ Loading GeoTIFF overlay:', geotiffUrl)
-    console.log('🎨 Variable:', variable, 'Colormap:', colormap)
-    
-    // Load GeoTIFF library
+    // Step 1: Load all required libraries
+    console.log('Step 1: Loading libraries...')
     await loadGeoTiffLibraries()
-    const GeoTIFF = (window as any).GeoTIFF
     
-    // Fetch GeoTIFF data
+    const GeoTIFF = (window as any).GeoTIFF
+    const proj4 = (window as any).proj4
+    const geokeysToProj4 = (window as any).geokeysToProj4
+    
+    if (!GeoTIFF) {
+      console.error('❌ GeoTIFF library not loaded')
+      return null
+    }
+    console.log('✅ Libraries loaded')
+    
+    // Step 2: Fetch GeoTIFF
+    console.log('Step 2: Fetching GeoTIFF...')
     const response = await fetch(geotiffUrl)
+    
     if (!response.ok) {
-      throw new Error(`Failed to fetch GeoTIFF: ${response.status}`)
+      console.error('❌ Failed to fetch GeoTIFF:', response.status)
+      return null
     }
     
     const arrayBuffer = await response.arrayBuffer()
+    console.log('✅ Fetched:', (arrayBuffer.byteLength / 1024).toFixed(2), 'KB')
+    
+    // Step 3: Parse GeoTIFF
+    console.log('Step 3: Parsing GeoTIFF...')
     const tiff = await GeoTIFF.fromArrayBuffer(arrayBuffer)
     const image = await tiff.getImage()
     
-    // Get image dimensions and bounds
     const width = image.getWidth()
     const height = image.getHeight()
-    const [west, south, east, north] = image.getBoundingBox()
+    const samplesPerPixel = image.getSamplesPerPixel()
     
-    console.log('📊 GeoTIFF Info:', { width, height, bounds: [west, south, east, north] })
+    console.log('✅ Parsed - Dimensions:', { width, height, samplesPerPixel })
     
-    // Read raster data (single band)
-    const rasterData = await image.readRasters({ samples: [0] })
-    const values = rasterData[0] // First band
+    // Step 4: Get bounding box
+    console.log('Step 4: Extracting bounding box...')
+    const bounds = image.getBoundingBox()
     
-    // Create canvas for visualization
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    
-    const ctx = canvas.getContext('2d')!
-    const imageData = ctx.getImageData(0, 0, width, height)
-    const data = imageData.data
-    
-    // Color mapping based on variable type and backend colormap
-    console.log('🎨 Applying dynamic color mapping for variable:', variable)
-    
-    let pixelIndex = 0
-    for (let i = 0; i < values.length; i++) {
-      const value = values[i]
-      const color = getVariableColor(value, variable, colormap)
-      
-      // Set RGBA values
-      data[pixelIndex] = color[0]     // Red
-      data[pixelIndex + 1] = color[1] // Green  
-      data[pixelIndex + 2] = color[2] // Blue
-      data[pixelIndex + 3] = isNaN(value) ? 0 : 200 // Alpha
-      
-      pixelIndex += 4
+    if (!bounds || bounds.length !== 4) {
+      console.error('❌ No valid bounding box found')
+      return null
     }
     
-    // Apply processed image data
-    ctx.putImageData(imageData, 0, 0)
-    const pngDataUrl = canvas.toDataURL('image/png')
+    console.log('📍 Raw bounds (original projection):', bounds)
     
-    console.log('✅ GeoTIFF processed to PNG canvas with dynamic colors')
+    // Step 5: CRITICAL - Convert projection to WGS84
+    console.log('Step 5: Converting projection to WGS84...')
+    let minXY: number[]
+    let maxXY: number[]
     
-    // Create precise corner coordinates for Azure Maps
-    const coordinates: [number, number][] = [
-      [west, north],  // Top-left
-      [east, north],  // Top-right  
-      [east, south],  // Bottom-right
-      [west, south]   // Bottom-left
+    if (proj4 && geokeysToProj4) {
+      try {
+        const geoKeys = image.getGeoKeys()
+        console.log('🗺️ GeoKeys:', geoKeys)
+        
+        const projObj = geokeysToProj4.toProj4(geoKeys)
+        console.log('🗺️ Source projection:', projObj.proj4)
+        
+        // Create projection transformer
+        const projection = proj4('WGS84', projObj.proj4)
+        
+        // Transform corners from source projection to WGS84
+        minXY = projection.inverse([bounds[0], bounds[1]])
+        maxXY = projection.inverse([bounds[2], bounds[3]])
+        
+        console.log('✅ Converted to WGS84:')
+        console.log('  - SW corner (min):', minXY)
+        console.log('  - NE corner (max):', maxXY)
+      } catch (projError) {
+        console.warn('⚠️ Projection conversion failed, assuming already WGS84:', projError)
+        minXY = [bounds[0], bounds[1]]
+        maxXY = [bounds[2], bounds[3]]
+      }
+    } else {
+      console.warn('⚠️ proj4 libraries not available, assuming WGS84')
+      minXY = [bounds[0], bounds[1]]
+      maxXY = [bounds[2], bounds[3]]
+    }
+    
+    // Validate converted coordinates
+    if (!minXY.every(isFinite) || !maxXY.every(isFinite)) {
+      console.error('❌ Invalid projected coordinates:', { minXY, maxXY })
+      return null
+    }
+    
+    const bbox = [minXY[0], minXY[1], maxXY[0], maxXY[1]]
+    console.log('📍 Final bbox for camera:', bbox)
+    
+    // Step 6: Read image data and convert to PNG
+    console.log('Step 6: Converting to PNG...')
+    let canvas: HTMLCanvasElement
+    let pngUrl: string
+    
+    if (samplesPerPixel >= 3) {
+      // GeoTIFF has RGB bands - use them directly
+      console.log('📊 GeoTIFF has RGB bands, reading...')
+      
+      const pool = new GeoTIFF.Pool()
+      const rgb = await image.readRGB({ pool })
+      
+      console.log('✅ RGB data loaded:', rgb.length, 'bytes')
+      
+      // Create canvas
+      canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      
+      const ctx = canvas.getContext('2d')!
+      const imageData = ctx.createImageData(width, height)
+      const data = imageData.data
+      
+      // Copy RGB data to canvas
+      let j = 0
+      for (let i = 0; i < rgb.length; i += 3) {
+        data[j] = rgb[i]       // Red
+        data[j + 1] = rgb[i + 1] // Green
+        data[j + 2] = rgb[i + 2] // Blue
+        data[j + 3] = 255        // Alpha (fully opaque)
+        j += 4
+      }
+      
+      ctx.putImageData(imageData, 0, 0)
+      pngUrl = canvas.toDataURL('image/png', 1.0)
+      
+      console.log('✅ RGB canvas created')
+      
+    } else {
+      // Single band - apply colormap
+      console.log('📊 Single band GeoTIFF, applying colormap...')
+      
+      const rasters = await image.readRasters()
+      const values = rasters[0] as Float32Array
+      
+      console.log('✅ Raster data loaded:', values.length, 'values')
+      
+      // Find min/max for normalization
+      let min = Infinity
+      let max = -Infinity
+      
+      for (let i = 0; i < values.length; i++) {
+        if (isFinite(values[i])) {
+          min = Math.min(min, values[i])
+          max = Math.max(max, values[i])
+        }
+      }
+      
+      console.log('📊 Value range:', { min, max })
+      
+      // Create canvas with colormap
+      canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      
+      const ctx = canvas.getContext('2d')!
+      const imageData = ctx.createImageData(width, height)
+      const data = imageData.data
+      
+      // Apply colormap based on variable type
+      for (let i = 0; i < values.length; i++) {
+        const value = values[i]
+        let r: number, g: number, b: number, a: number
+        
+        if (!isFinite(value)) {
+          // Transparent for NaN/Infinity
+          r = g = b = a = 0
+        } else {
+          // Normalize to 0-1
+          const normalized = (value - min) / (max - min)
+          
+          // Apply colormap based on variable
+          if (variable.toLowerCase().includes('temp')) {
+            // Temperature: blue (cold) to red (hot)
+            r = Math.floor(normalized * 255)
+            g = Math.floor((1 - Math.abs(normalized - 0.5) * 2) * 255)
+            b = Math.floor((1 - normalized) * 255)
+            a = 204 // 80% opacity
+          } else if (variable.toLowerCase().includes('precip') || variable.toLowerCase().includes('rain')) {
+            // Precipitation: white to blue
+            r = Math.floor((1 - normalized) * 255)
+            g = Math.floor((1 - normalized) * 255)
+            b = 255
+            a = 204
+          } else {
+            // Default: simple gradient
+            r = Math.floor(normalized * 255)
+            g = Math.floor((1 - normalized) * 128)
+            b = 128
+            a = 204
+          }
+        }
+        
+        const pixelIndex = i * 4
+        data[pixelIndex] = r
+        data[pixelIndex + 1] = g
+        data[pixelIndex + 2] = b
+        data[pixelIndex + 3] = a
+      }
+      
+      ctx.putImageData(imageData, 0, 0)
+      pngUrl = canvas.toDataURL('image/png', 1.0)
+      
+      console.log('✅ Single-band canvas created with colormap')
+    }
+    
+    // Step 7: Create corner coordinates (Microsoft's order)
+    console.log('Step 7: Creating corner coordinates...')
+    
+    // CRITICAL: Must use exact order from Microsoft example
+    const corners: [number, number][] = [
+      [minXY[0], maxXY[1]],  // Top-left (Northwest)
+      maxXY,                 // Top-right (Northeast) 
+      [maxXY[0], minXY[1]],  // Bottom-right (Southeast)
+      minXY                  // Bottom-left (Southwest)
     ]
     
-    console.log('📍 Azure Maps coordinates:', coordinates)
+    console.log('📍 Image corners (WGS84):', corners)
     
-    // Create image layer
+    // Step 8: Create ImageLayer with PNG
+    console.log('Step 8: Creating ImageLayer...')
+    
     const imageLayer = new atlas.layer.ImageLayer({
-      url: pngDataUrl,
-      coordinates: coordinates,
-      opacity: 0.7
+      url: pngUrl,
+      coordinates: corners,
+      opacity: 0.75,
+      visible: true
     })
     
-    // Add layer to map (below labels for visibility)
+    console.log('✅ ImageLayer created')
+    
+    // Step 9: Add to map
+    console.log('Step 9: Adding layer to map...')
+    
     try {
       map.layers.add(imageLayer, 'labels')
-      console.log('✅ GeoTIFF overlay added to Azure Maps')
-    } catch (error) {
-      console.warn('⚠️ Adding below labels failed, adding to top:', error)
+      console.log('✅ Layer added below labels')
+    } catch (err) {
       map.layers.add(imageLayer)
+      console.log('✅ Layer added to top')
     }
     
+    // Step 10: Zoom to bounds
+    console.log('Step 10: Zooming to data...')
+    map.setCamera({
+      bounds: bbox,
+      padding: 40
+    })
+    
+    console.log('✅ ====== GEOTIFF OVERLAY COMPLETE ======')
     return imageLayer
     
-  } catch (error) {
-    console.error('❌ GeoTIFF overlay failed:', error)
+  } catch (error: any) {
+    console.error('❌ ====== GEOTIFF LOADING FAILED ======')
+    console.error('Error:', error?.message)
+    console.error('Stack:', error?.stack)
     return null
   }
 }
 
-// Create dynamic legend based on variable type and backend metadata
+// Create legend for the overlay
 export function createDynamicLegend(variable: string, colormap?: any, unit?: string): HTMLElement {
   const legend = document.createElement('div')
   legend.style.cssText = `
     position: absolute;
     bottom: 20px;
     right: 20px;
-    background: rgba(255, 255, 255, 0.9);
-    padding: 10px;
-    border-radius: 5px;
-    font-size: 12px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    background: rgba(255, 255, 255, 0.95);
+    padding: 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
     z-index: 1000;
+    max-width: 200px;
+    border: 1px solid #ddd;
   `
   
   const title = document.createElement('div')
-  title.textContent = `${getVariableDisplayName(variable)} ${unit ? `(${unit})` : ''}`
+  const displayName = getVariableDisplayName(variable)
+  title.textContent = `${displayName} ${unit ? `(${unit})` : ''}`
   title.style.fontWeight = 'bold'
-  title.style.marginBottom = '5px'
+  title.style.marginBottom = '8px'
+  title.style.color = '#333'
   legend.appendChild(title)
   
-  // Use backend colormap if available, otherwise use variable-specific legend
-  const categories = colormap ? createColormapLegend(colormap) : getVariableLegendCategories(variable)
-  
-  categories.forEach(cat => {
-    const item = document.createElement('div')
-    item.style.cssText = 'display: flex; align-items: center; margin: 2px 0;'
-    
-    const colorBox = document.createElement('div')
-    colorBox.style.cssText = `
-      width: 15px; height: 15px; 
-      background: ${cat.color}; 
-      margin-right: 8px; 
-      border: 1px solid #ccc;
-    `
-    
-    const text = document.createElement('span')
-    text.textContent = `${cat.label} ${cat.range ? `(${cat.range})` : ''}`
-    text.style.fontSize = '11px'
-    
-    item.appendChild(colorBox)
-    item.appendChild(text)
-    legend.appendChild(item)
-  })
+  const info = document.createElement('div')
+  info.style.fontSize = '11px'
+  info.style.color = '#666'
+  info.textContent = 'Converted GeoTIFF overlay'
+  legend.appendChild(info)
   
   return legend
 }
 
-// Create legend from backend colormap
-function createColormapLegend(colormap: any): Array<{label: string, color: string, range?: string}> {
-  if (!colormap.colors || !colormap.values) return []
-  
-  return colormap.colors.map((color: string, index: number) => ({
-    label: colormap.labels?.[index] || `Level ${index + 1}`,
-    color: color,
-    range: colormap.values[index]?.toString()
-  }))
-}
-
-// Get variable-specific legend categories
-function getVariableLegendCategories(variable: string): Array<{label: string, color: string, range?: string}> {
-  const varType = detectVariableType(variable)
-  
-  switch (varType) {
-    case 'spi':
-      return [
-        { label: 'Extreme Drought', color: '#8B0000', range: '≤ -2.0' },
-        { label: 'Severe Drought', color: '#FF0000', range: '-1.5 to -2.0' },
-        { label: 'Moderate Drought', color: '#FF8C00', range: '-1.0 to -1.5' },
-        { label: 'Mild Drought', color: '#FFFF00', range: '-0.5 to -1.0' },
-        { label: 'Near Normal', color: '#90EE90', range: '-0.5 to 0.5' },
-        { label: 'Wet', color: '#00BFFF', range: '0.5 to 1.0' },
-        { label: 'Very Wet', color: '#0000FF', range: '> 1.0' }
-      ]
-    case 'temperature':
-      return [
-        { label: 'Very Cold', color: '#0000FF', range: '< -20°C' },
-        { label: 'Cold', color: '#4080FF', range: '-20 to 0°C' },
-        { label: 'Cool', color: '#80C0FF', range: '0 to 15°C' },
-        { label: 'Warm', color: '#FFE080', range: '15 to 30°C' },
-        { label: 'Hot', color: '#FF8040', range: '30 to 40°C' },
-        { label: 'Very Hot', color: '#FF0000', range: '> 40°C' }
-      ]
-    case 'precipitation':
-      return [
-        { label: 'No Rain', color: '#FFFFFF', range: '0 mm' },
-        { label: 'Light Rain', color: '#C0E0FF', range: '0-5 mm' },
-        { label: 'Moderate Rain', color: '#8080FF', range: '5-20 mm' },
-        { label: 'Heavy Rain', color: '#4040FF', range: '20-50 mm' },
-        { label: 'Very Heavy', color: '#0000FF', range: '> 50 mm' }
-      ]
-    default:
-      return [
-        { label: 'Low', color: '#404080', range: 'Min' },
-        { label: 'Medium', color: '#8080C0', range: 'Mid' },
-        { label: 'High', color: '#C0C0FF', range: 'Max' }
-      ]
-  }
-}
-
-// Get display name for variable
+// Helper: Get display name for variable
 function getVariableDisplayName(variable: string): string {
   const varMap: { [key: string]: string } = {
     'spi': 'SPI (Drought Index)',
-    'spi3': 'SPI-3 (3-Month Drought)',
+    'temperature': 'Temperature',
+    'temp': 'Temperature',
     'tair': 'Air Temperature',
-    'rainf': 'Precipitation',
-    'psurf': 'Surface Pressure',
-    'wind': 'Wind Speed',
-    'qair': 'Humidity',
-    'swdown': 'Solar Radiation',
-    'soilmoi': 'Soil Moisture'
+    'precipitation': 'Precipitation',
+    'precip': 'Precipitation',
+    'rainf': 'Rainfall'
   }
   
   const key = variable.toLowerCase().replace(/[_\d]/g, '')
-  return varMap[key] || variable.replace(/_/g, ' ').replace(/\d+/g, '').trim()
+  return varMap[key] || variable.replace(/_/g, ' ')
 }
