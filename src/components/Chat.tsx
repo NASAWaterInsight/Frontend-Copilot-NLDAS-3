@@ -320,9 +320,19 @@ export default function Chat() {
       const contentIsObject = typeof r?.content === 'object' && r?.content !== null
       if (contentIsObject) cleanContent = ''
       
-      // Strip noisy backend lines
+      // ✅ CRITICAL FIX: Strip URLs from content to prevent display
       if (typeof cleanContent === 'string') {
+        // Remove analysis completed line
         cleanContent = cleanContent.replace(/^Analysis completed:.*$/i, '').trim()
+        
+        // ✅ NEW: Remove all URLs (static_url, overlay_url, etc.) from content
+        cleanContent = cleanContent.replace(/https?:\/\/[^\s]+/g, '').trim()
+        
+        // ✅ NEW: Remove Azure blob storage URLs specifically
+        cleanContent = cleanContent.replace(/https:\/\/[^.\s]+\.blob\.core\.windows\.net\/[^\s]+/g, '').trim()
+        
+        // ✅ NEW: Clean up any leftover whitespace or empty lines
+        cleanContent = cleanContent.replace(/\n\s*\n/g, '\n').trim()
       }
 
       // Get analysis info from backend
@@ -601,7 +611,10 @@ export default function Chat() {
         // Don't append extra notes if we have a region summary
         if (!hasRegionSummary && hasTemperatureData) {
           const note = `Interactive map ready with ${r.temperature_data.length} data points.`
-          cleanContent = cleanContent ? `${cleanContent}\n${note}` : note
+          // ✅ FIXED: Only add note if cleanContent doesn't already contain URLs
+          if (!cleanContent.includes('Interactive map ready')) {
+            cleanContent = cleanContent ? `${cleanContent}\n${note}` : note
+          }
         }
       } else {
         // Legacy fallback
@@ -614,8 +627,8 @@ export default function Chat() {
 
       const assistantMsg: Message = {
         id: String(Date.now() + 1),
-        role: 'assistant',
-        text: cleanContent || 'Analysis completed.',
+        role: 'assistant',        // ✅ FINAL CLEANUP: Ensure no URLs in final text
+        text: (cleanContent || 'Analysis completed.').replace(/https?:\/\/[^\s]+/g, '').trim() || 'Analysis completed.',
         imageUrl: imageUrl,
         mapData: mapData
       }
