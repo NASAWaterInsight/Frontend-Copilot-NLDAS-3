@@ -37,15 +37,15 @@ export default function Chat() {
       setUserId(id)
       console.log('Chat initialized for user:', id.substring(0, 8) + '...')
       
-      // ✅ Test FastAPI connection with better messaging
-      console.log('🔧 Testing FastAPI connection...')
-      const fastApiWorking = await testFastAPIConnection()
-      if (fastApiWorking) {
-        console.log('✅ FastAPI server is working!')
+      // ✅ Test Azure Functions connection
+      console.log('🔧 Testing Azure Functions connection...')
+      const azureFunctionsWorking = await testFastAPIConnection() // This now tests Azure Functions
+      if (azureFunctionsWorking) {
+        console.log('✅ Azure Functions server is working!')
       } else {
-        console.error('❌ FastAPI server not responding')
-        console.error('💡 Make sure your FastAPI server is running on port 8000')
-        console.error('💡 Try: cd /path/to/your/fastapi/server && python -m uvicorn main:app --host 0.0.0.0 --port 8000')
+        console.error('❌ Azure Functions server not responding (localhost:7071)')
+        console.error('💡 Make sure your Azure Functions server is running on port 7071')
+        console.error('💡 Try: func start --port 7071')
       }
     }
     initUser()
@@ -75,29 +75,20 @@ export default function Chat() {
       location: window.location.href
     })
     
-    // ✅ Test FastAPI connection with detailed output
-    console.log('🔧 Testing FastAPI endpoints...')
+    // ✅ Test Azure Functions connection with detailed output
+    console.log('🔧 Testing Azure Functions endpoints...')
     testFastAPIConnection().then(working => {
-      console.log('🔧 FastAPI connection test result:', working)
+      console.log('🔧 Azure Functions connection test result:', working)
     })
     
-    // ✅ Test specific endpoints
-    const testEndpoints = [
-      '/api/health',
-      '/docs', 
-      '/api/chat',
-      '/'
-    ]
-    
-    testEndpoints.forEach(endpoint => {
-      fetch(`http://localhost:8000${endpoint}`, { method: 'HEAD' })
-        .then(response => {
-          console.log(`🔍 ${endpoint}: ${response.status} ${response.statusText}`)
-        })
-        .catch(error => {
-          console.log(`❌ ${endpoint}: Failed - ${error.message}`)
-        })
-    })
+    // ✅ Test Azure Functions endpoint
+    fetch('http://localhost:7071/multi_agent_function', { method: 'OPTIONS' })
+      .then(response => {
+        console.log(`🔍 Azure Functions /multi_agent_function: ${response.status} ${response.statusText}`)
+      })
+      .catch(error => {
+        console.log(`❌ Azure Functions /multi_agent_function: Failed - ${error.message}`)
+      })
   }
 
   // Function to determine map bounds based on query
