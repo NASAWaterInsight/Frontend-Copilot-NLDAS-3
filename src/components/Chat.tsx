@@ -24,6 +24,7 @@ export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([])
   const [debug, setDebug] = useState<any>(null)
   const [userId, setUserId] = useState<string>('')
+  const [threadId, setThreadId] = useState<string | null>(null)
   const endRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -52,10 +53,11 @@ export default function Chat() {
   const handleNewConversation = () => {
     clearUserId()
     setUserId('')
+    setThreadId(null)
     setMessages([])
     setError(null)
     setDebug(null)
-    console.log('🔄 Cleared user ID for fresh conversation')
+    console.log('🔄 Cleared user ID and thread ID for fresh conversation')
   }
 
   // Debug function
@@ -67,6 +69,8 @@ export default function Chat() {
       DEV_MODE: import.meta.env.DEV
     })
     console.log('Current messages:', messages.length)
+    console.log('Current userId:', userId ? userId.substring(0, 8) + '...' : 'none')
+    console.log('Current threadId:', threadId ? threadId.substring(0, 12) + '...' : 'none')
     
     testFastAPIConnection().then(working => {
       console.log('🔧 FastAPI connection test result:', working)
@@ -101,8 +105,18 @@ export default function Chat() {
     const variableMap: { [key: string]: string } = {
       'Tair': 'Air Temperature',
       'Rainf': 'Precipitation',
+      'Wind_E': 'Wind (East Component)',
+      'Wind_N': 'Wind (North Component)',
+      'Wind_Speed': 'Wind Speed',
+      'wind_speed': 'Wind Speed',
+      // ✅ FIXED: Add proper humidity mappings
+      'Qair': 'Specific Humidity',
+      'Qair_f_inst': 'Specific Humidity',
+      'RelHum': 'Relative Humidity',
+      'humidity': 'Relative Humidity',
       'SPI': 'SPI (Drought Index)',
       'SPI3': 'SPI-3 (3-Month Drought)',
+      'spi': 'SPI (Drought Index)',
       'temperature': 'Temperature'
     }
     return variableMap[variable] || variable.replace(/_/g, ' ')
@@ -114,10 +128,60 @@ export default function Chat() {
       'Tair': '°C',
       'temperature': '°C',
       'Rainf': 'mm/hr',
+      'Wind_Speed': 'm/s',
+      'wind_speed': 'm/s',
+      'Wind_E': 'm/s',
+      'Wind_N': 'm/s',
+      // ✅ FIXED: Add proper humidity units
+      'Qair': 'kg/kg',
+      'Qair_f_inst': 'kg/kg',
+      'RelHum': '%',
+      'humidity': '%',
       'SPI': '',
-      'SPI3': ''
+      'SPI3': '',
+      'spi': ''
     }
     return unitMap[variable] || ''
+  }
+
+  // ✅ NEW: Helper function for smart number formatting
+  function formatValueWithPrecision(value: number, variable: string): string {
+    if (!isFinite(value)) return 'N/A'
+    
+    // Determine appropriate decimal places based on variable type and value magnitude
+    if (variable.toLowerCase().includes('qair') || variable.toLowerCase().includes('humidity')) {
+      // For humidity values (often very small decimals like 0.006430634782494356)
+      if (Math.abs(value) < 0.001) {
+        return value.toExponential(2) // Scientific notation for very small values
+      } else if (Math.abs(value) < 0.1) {
+        return value.toFixed(4) // 4 decimal places for small values
+      } else {
+        return value.toFixed(2) // 2 decimal places for larger values
+      }
+    } else if (variable.toLowerCase().includes('temp')) {
+      // Temperature values
+      return value.toFixed(1)
+    } else if (variable.toLowerCase().includes('precip') || variable.toLowerCase().includes('rain')) {
+      // Precipitation values
+      return value.toFixed(2)
+    } else if (variable.toLowerCase().includes('spi')) {
+      // SPI values (drought index)
+      return value.toFixed(2)
+    } else if (variable.toLowerCase().includes('wind')) {
+      // Wind speed values
+      return value.toFixed(1)
+    } else {
+      // Default: dynamic precision based on magnitude
+      if (Math.abs(value) < 0.001) {
+        return value.toExponential(2)
+      } else if (Math.abs(value) < 0.1) {
+        return value.toFixed(4)
+      } else if (Math.abs(value) < 10) {
+        return value.toFixed(3)
+      } else {
+        return value.toFixed(1)
+      }
+    }
   }
 
   async function handleSubmit(e?: React.FormEvent) {
@@ -133,99 +197,143 @@ export default function Chat() {
 
     try {
       console.log('Sending request to backend with query:', userMsg.text)
-      const resp = await callMultiAgentFunction({ action: 'generate', data: { query: userMsg.text } })
+      
+      const resp = await callMultiAgentFunction({ 
+        action: 'generate', 
+        data: { 
+          query: userMsg.text,
+          user_id: userId,
+          thread_id: threadId
+        } 
+      })
+      
       console.log('Raw backend response:', resp)
-      
       const r = resp.response
-
-      // ✅ CRITICAL FIX: Extract URL from nested locations
-      if (!r?.static_url && r?.analysis_data?.result && typeof r.analysis_data.result === 'string') {
-        const urlMatch = r.analysis_data.result.match(/https?:\/\/[^\s]+/)
-        if (urlMatch) {
-          console.log('📎 Extracted URL from analysis_data.result:', urlMatch[0])
-          r.static_url = urlMatch[0]
-          
-          if (urlMatch[0].includes('_june_july_') || 
-              urlMatch[0].includes('_may_june_') ||
-              urlMatch[0].includes('_comparison_') ||
-              urlMatch[0].includes('subplot')) {
-            console.log('📊 Detected subplot from filename pattern')
-            r.__is_subplot = true
-          }
-        }
-      }
-
-      if (!r?.static_url && typeof r?.content === 'string') {
-        const urlMatch = r.content.match(/https?:\/\/[^\s]+/)
-        if (urlMatch) {
-          console.log('📎 Extracted URL from content field:', urlMatch[0])
-          r.static_url = urlMatch[0]
-          
-          if (urlMatch[0].includes('_june_july_') || 
-              urlMatch[0].includes('_may_june_') ||
-              urlMatch[0].includes('_comparison_') ||
-              urlMatch[0].includes('subplot')) {
-            console.log('📊 Detected subplot from filename pattern')
-            r.__is_subplot = true
-          }
-        }
-      }
       
-      console.log('=== BACKEND RESPONSE STRUCTURE ===')
-      console.log('static_url (extracted):', r?.static_url)
-      console.log('is_subplot:', r?.__is_subplot)
-      console.log('use_tiles:', r?.use_tiles)
-      console.log('tile_config:', r?.tile_config)
-      console.log('=== END RESPONSE STRUCTURE ===')
+      // Store thread_id from response
+      if (r?.thread_id) {
+        setThreadId(r.thread_id)
+        console.log('💾 Stored thread_id:', r.thread_id.substring(0, 12) + '...')
+      }
+
+      // ✅ PRIORITY 1: CHECK FOR ERRORS (highest priority)
+      let hasError = false
+      let errorMessage = ''
+
+      // Check multiple locations for errors
+      if (r?.status === 'error' || r?.analysis_data?.status === 'error') {
+        hasError = true
+        errorMessage = r?.error || r?.analysis_data?.error || 'An error occurred during analysis'
+        console.log('❌ Error detected:', errorMessage)
+      }
+
+      // If error, show it immediately and skip processing
+      if (hasError) {
+        const errorMsg: Message = {
+          id: String(Date.now() + 1),
+          role: 'assistant',
+          text: `⚠️ Error: ${errorMessage}\n\n${r?.analysis_data?.suggestion ? `💡 Suggestion: ${r.analysis_data.suggestion}` : ''}`
+        }
+        setMessages((prev) => [...prev, errorMsg])
+        setDebug((r?.debug ?? r) || null)
+        setLoading(false)
+        return
+      }
+
+      // ✅ PRIORITY 2: EXTRACT TEXT RESULT
+      let cleanContent = ''
+      
+      // Check analysis_data.result first (text answers like "The average wind speed is 3.41 m/s")
+      if (r?.analysis_data?.status === 'success' && r?.analysis_data?.result) {
+        if (typeof r.analysis_data.result === 'string') {
+          const hasUrl = /https?:\/\/[^\s]+/.test(r.analysis_data.result)
+          if (!hasUrl) {
+            // Pure text result
+            cleanContent = r.analysis_data.result
+            console.log('📝 Using text result from analysis_data.result:', cleanContent)
+          }
+        }
+      }
+
+      // Fallback to content field if no result was found
+      if (!cleanContent && r?.content) {
+        cleanContent = typeof r.content === 'string' ? r.content : ''
+      }
+
+      // ✅ Strip URLs from content if needed
+      if (typeof cleanContent === 'string' && cleanContent) {
+        const hasSubstantialText = cleanContent.length > 30 && /[a-zA-Z]/.test(cleanContent)
+        const looksLikeAnswer = /\b(is|are|average|total|maximum|minimum|speed|temperature|value)\b/i.test(cleanContent)
+        
+        // Only strip URLs if it doesn't look like a text answer
+        if (!looksLikeAnswer || cleanContent.includes('Analysis completed')) {
+          cleanContent = cleanContent.replace(/^Analysis completed:?.*$/im, '').trim()
+          cleanContent = cleanContent.replace(/https?:\/\/[^\s]+/g, '').trim()
+          cleanContent = cleanContent.replace(/\n\s*\n/g, '\n').trim()
+        }
+      }
+
+      // Default message if still empty
+      if (!cleanContent || cleanContent.trim() === '') {
+        cleanContent = 'Analysis completed successfully.'
+      }
+
+      console.log('=== PROCESSING RESPONSE ===')
+      console.log('Final cleanContent:', cleanContent)
+      console.log('static_url:', r?.static_url)
+      console.log('geojson features:', r?.geojson?.features?.length)
+      console.log('=== END PROCESSING ===')
 
       const hasGeoTiffUrl = !!(r?.geotiff_url)
       const hasStaticUrl = !!(r?.static_url)
       const hasOverlayUrl = !!(r?.overlay_url)
       let hasGeoJsonData = !!(r?.geojson?.features?.length > 0)
-      let hasTemperatureData = !!(r?.temperature_data?.length > 0)
 
-      // ✅ Validate GeoJSON
-      if (hasGeoJsonData) {
-        const validFeatures = r.geojson.features.filter((f: any) => {
-          const lat = f.geometry?.coordinates?.[1]
-          const lng = f.geometry?.coordinates?.[0]
-          const value = f.properties?.value ?? f.properties?.spi ?? f.properties?.temperature
-          return isFinite(lat) && isFinite(lng) && isFinite(value)
-        })
-        
-        console.log(`✅ Valid GeoJSON features: ${validFeatures.length} / ${r.geojson.features.length}`)
-        r.geojson.features = validFeatures
-        hasGeoJsonData = validFeatures.length > 0
-      }
-
-      // ✅ Validate temperature data
-      if (hasTemperatureData) {
-        const validTempData = r.temperature_data.filter((point: any) => {
-          return isFinite(point.latitude) && isFinite(point.longitude) && 
-                 isFinite(point.value ?? point.spi ?? 0)
-        })
-        
-        console.log(`✅ Valid temperature data: ${validTempData.length} / ${r.temperature_data.length}`)
-        r.temperature_data = validTempData
-        hasTemperatureData = validTempData.length > 0
-      }
-      
       let imageUrl = null
       let mapData: MapData | undefined
-      let cleanContent = r?.content || ''
 
-      // ✅ Strip URLs from content
-      if (typeof cleanContent === 'string') {
-        cleanContent = cleanContent.replace(/^Analysis completed:.*$/i, '').trim()
-        cleanContent = cleanContent.replace(/https?:\/\/[^\s]+/g, '').trim()
-        cleanContent = cleanContent.replace(/https:\/\/[^.\s]+\.blob\.core\.windows\.net\/[^\s]+/g, '').trim()
-        cleanContent = cleanContent.replace(/\n\s*\n/g, '\n').trim()
+      // ✅ NORMALIZE GEOJSON DATA (fix property names)
+      if (hasGeoJsonData) {
+        console.log('🔍 Processing GeoJSON data...')
+        
+        r.geojson.features = r.geojson.features
+          .filter((f: any) => {
+            const lat = f.geometry?.coordinates?.[1]
+            const lng = f.geometry?.coordinates?.[0]
+            // Check for value in multiple possible property names
+            const value = f.properties?.value ?? f.properties?.spi ?? f.properties?.temperature ?? f.properties?.spi_value
+            
+            const isValid = isFinite(lat) && isFinite(lng) && isFinite(value)
+            if (!isValid) {
+              console.warn('❌ Invalid GeoJSON feature:', { lat, lng, value, properties: f.properties })
+            }
+            return isValid
+          })
+          .map((f: any) => {
+            // Normalize property names - ensure 'value' exists
+            const value = f.properties?.value ?? f.properties?.spi ?? f.properties?.temperature ?? f.properties?.spi_value
+            const variable = f.properties?.variable || 'spi'
+            
+            return {
+              ...f,
+              properties: {
+                ...f.properties,
+                value: value,  // ✅ Ensure 'value' property exists
+                variable: variable,
+                unit: getVariableUnit(variable),
+                displayName: getDisplayName(variable)
+              }
+            }
+          })
+        
+        hasGeoJsonData = r.geojson.features.length > 0
+        console.log(`✅ Normalized ${r.geojson.features.length} GeoJSON features`)
       }
 
       const variable = r?.variable || 'temperature'
 
       // Build mapData if map artifacts exist
-      if (hasStaticUrl || hasOverlayUrl || hasGeoJsonData || hasTemperatureData || hasGeoTiffUrl) {
+      if (hasStaticUrl || hasOverlayUrl || hasGeoJsonData || hasGeoTiffUrl) {
         console.log('✅ Building mapData from backend artifacts')
         
         let mapBounds = null
@@ -237,8 +345,7 @@ export default function Chat() {
           console.log('📊 Using backend bounds:', mapBounds)
         } 
         else if (hasGeoJsonData) {
-          const features = r.geojson.features
-          const validCoords = features
+          const validCoords = r.geojson.features
             .map((f: any) => ({
               lat: f.geometry.coordinates[1],
               lng: f.geometry.coordinates[0]
@@ -257,23 +364,6 @@ export default function Chat() {
             console.log('📊 Calculated bounds from GeoJSON:', mapBounds)
           }
         }
-        else if (hasTemperatureData) {
-          const validTempData = r.temperature_data.filter((p: any) => 
-            isFinite(p.latitude) && isFinite(p.longitude)
-          )
-          
-          if (validTempData.length > 0) {
-            const lats = validTempData.map((p: any) => p.latitude)
-            const lngs = validTempData.map((p: any) => p.longitude)
-            mapBounds = {
-              north: Math.max(...lats), 
-              south: Math.min(...lats),
-              east: Math.max(...lngs), 
-              west: Math.min(...lngs)
-            }
-            console.log('📊 Calculated bounds from temperature data:', mapBounds)
-          }
-        }
         
         if (!mapBounds) {
           mapBounds = getMapBounds(currentQuery)
@@ -285,25 +375,24 @@ export default function Chat() {
             (mapBounds.west + mapBounds.east) / 2, 
             (mapBounds.north + mapBounds.south) / 2
           ]
-          console.log('📊 Calculated center:', mapCenter)
         }
         
-        const latPadding = mapBounds ? Math.abs(Number(mapBounds.north) - Number(mapBounds.south)) * 0.1 : 1
-        const lngPadding = mapBounds ? Math.abs(Number(mapBounds.east) - Number(mapBounds.west)) * 0.1 : 1
+        const latPadding = mapBounds ? Math.abs(mapBounds.north - mapBounds.south) * 0.1 : 1
+        const lngPadding = mapBounds ? Math.abs(mapBounds.east - mapBounds.west) * 0.1 : 1
         
         const paddedBounds = mapBounds ? {
-          north: Number(mapBounds.north) + latPadding, 
-          south: Number(mapBounds.south) - latPadding,
-          east: Number(mapBounds.east) + lngPadding, 
-          west: Number(mapBounds.west) - lngPadding
+          north: mapBounds.north + latPadding, 
+          south: mapBounds.south - latPadding,
+          east: mapBounds.east + lngPadding, 
+          west: mapBounds.west - lngPadding
         } : getMapBounds(currentQuery)
         
         const center = mapCenter ? { 
-          lat: Number(mapCenter[1]), 
-          lng: Number(mapCenter[0]) 
+          lat: mapCenter[1], 
+          lng: mapCenter[0] 
         } : {
-          lat: (Number(paddedBounds.north) + Number(paddedBounds.south)) / 2,
-          lng: (Number(paddedBounds.east) + Number(paddedBounds.west)) / 2
+          lat: (paddedBounds.north + paddedBounds.south) / 2,
+          lng: (paddedBounds.east + paddedBounds.west) / 2
         }
         
         mapData = {
@@ -316,7 +405,7 @@ export default function Chat() {
             overlay_url: r.overlay_url,
             geotiff_url: r.geotiff_url,
             temperature_data: r.temperature_data || [],
-            geojson: r.geojson,
+            geojson: r.geojson,  // ✅ Now has normalized 'value' property
             bounds: mapBounds,
             map_config: r.map_config,
             use_tiles: r.use_tiles,
@@ -330,47 +419,19 @@ export default function Chat() {
             raw_response: r
           }
         }
-
-        // ✅ DETECT SUBPLOT MODE
-        const isSubplotComparison = 
-          r.__is_subplot ||
-          (mapData.azureData.static_url && 
-           !mapData.azureData.use_tiles && 
-           !mapData.azureData.overlay_url &&
-           !mapData.azureData.tile_config)
-
-        if (isSubplotComparison) {
-          console.log('📊 Detected subplot comparison - using static-only display')
-          mapData.azureData.display_mode = 'subplot'
-        }
         
         imageUrl = r.static_url
       } else {
-        console.log('❌ Processing as legacy response')
+        console.log('❌ No map artifacts found')
         imageUrl = r?.content?.match(/https?:\/\/[^\s]+/)?.[0] || null
-        if (typeof cleanContent === 'string') {
-          cleanContent = cleanContent.replace(/https?:\/\/[^\s]+/g, '').trim()
-        }
       }
 
-      // Check for errors in the response
-      let hasError = false
-      let errorMessage = ''
-
-      if (r?.analysis_data?.status === 'error') {
-        hasError = true
-        errorMessage = r.analysis_data.error || 'An error occurred during analysis'
-      }
-
-      // Create the assistant message with error handling
       const assistantMsg: Message = {
         id: String(Date.now() + 1),
         role: 'assistant',
-        text: hasError 
-          ? `⚠️ Error: ${errorMessage}\n\n${r?.analysis_data?.suggestion ? `💡 Suggestion: ${r.analysis_data.suggestion}` : ''}`
-          : (cleanContent || 'Analysis completed.').replace(/https?:\/\/[^\s]+/g, '').trim() || 'Analysis completed.',
-        imageUrl: hasError ? null : imageUrl,
-        mapData: hasError ? undefined : mapData
+        text: cleanContent,
+        imageUrl: imageUrl,
+        mapData: mapData
       }
 
       setMessages((prev) => [...prev, assistantMsg])
@@ -520,7 +581,7 @@ export default function Chat() {
               </div>
             ))}
             
-            {/* ✅ PROCESSING INDICATOR */}
+            {/* PROCESSING INDICATOR */}
             {loading && (
               <div className="flex justify-start">
                 <div className="bg-white border border-gray-200 rounded-xl rounded-tl-none shadow p-4">
@@ -559,20 +620,20 @@ export default function Chat() {
         </div>
       </div>
 
-      {/* Debug Panel - Send to Chat with Error Highlighting */}
+      {/* Debug Panel with Error Highlighting */}
       {debug && (
         <div className={`fixed bottom-4 right-4 w-96 max-h-64 ${
-          debug?.analysis_data?.status === 'error' 
+          debug?.analysis_data?.status === 'error' || debug?.status === 'error'
             ? 'bg-red-900 border-2 border-red-500' 
             : 'bg-gray-800'
         } text-white rounded-lg shadow-xl overflow-hidden z-50`}>
           <div className={`${
-            debug?.analysis_data?.status === 'error' 
+            debug?.analysis_data?.status === 'error' || debug?.status === 'error'
               ? 'bg-red-800' 
               : 'bg-gray-700'
           } px-4 py-2 flex justify-between items-center`}>
             <span className="text-sm font-semibold">
-              {debug?.analysis_data?.status === 'error' ? '⚠️ Error Debug Info' : 'Debug Info'}
+              {debug?.analysis_data?.status === 'error' || debug?.status === 'error' ? '⚠️ Error Debug Info' : 'Debug Info'}
             </span>
             <div className="flex gap-2">
               <button
@@ -580,7 +641,7 @@ export default function Chat() {
                   const debugMsg: Message = {
                     id: String(Date.now()),
                     role: 'assistant',
-                    text: `🐛 ${debug?.analysis_data?.status === 'error' ? 'Error ' : ''}Debug Information:\n\n${JSON.stringify(debug, null, 2)}`
+                    text: `🐛 ${debug?.analysis_data?.status === 'error' || debug?.status === 'error' ? 'Error ' : ''}Debug Information:\n\n${JSON.stringify(debug, null, 2)}`
                   }
                   setMessages(prev => [...prev, debugMsg])
                   setDebug(null)
@@ -598,14 +659,13 @@ export default function Chat() {
             </div>
           </div>
           <div className="p-4 overflow-auto max-h-52">
-            {/* Highlight error section if present */}
-            {debug?.analysis_data?.status === 'error' && (
+            {(debug?.analysis_data?.status === 'error' || debug?.status === 'error') && (
               <div className="bg-red-800/50 border border-red-500 rounded p-2 mb-2">
                 <div className="font-bold text-red-200">Error:</div>
-                <div className="text-sm">{debug.analysis_data.error}</div>
-                {debug.analysis_data.suggestion && (
+                <div className="text-sm">{debug?.analysis_data?.error || debug?.error}</div>
+                {(debug?.analysis_data?.suggestion || debug?.suggestion) && (
                   <div className="mt-2 text-yellow-200 text-xs">
-                    💡 {debug.analysis_data.suggestion}
+                    💡 {debug.analysis_data?.suggestion || debug.suggestion}
                   </div>
                 )}
               </div>
