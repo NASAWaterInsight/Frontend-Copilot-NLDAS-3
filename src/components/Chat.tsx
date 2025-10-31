@@ -437,226 +437,83 @@ export default function Chat() {
                 <div className={`max-w-full ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-xl rounded-tr-none max-w-[85%]' : 'bg-white text-gray-900 rounded-xl rounded-tl-none shadow'} p-4`}>
                   {m.text && <div className="whitespace-pre-wrap">{m.text}</div>}
                   
-                  {/* Show maps */}
+                  {/* ✅ SHOW AZURE MAPS FIRST (if mapData exists) */}
                   {m.mapData && AZURE_MAPS_KEY && (
-                    <div className="mt-3 space-y-4">
-                      {m.mapData.azureData?.display_mode === 'subplot' ? (
-                        // SUBPLOT MODE: Full-width comparison
-                        <div>
-                          <h4 className="text-sm font-semibold mb-2">📊 Comparison Visualization</h4>
-                          <div className="border rounded-md overflow-hidden bg-white" style={{ height: '600px' }}>
-                            <TransformWrapper
-                              initialScale={1}
-                              minScale={0.5}
-                              maxScale={4}
-                              centerOnInit={true}
-                              wheel={{ step: 0.1 }}
-                              pinch={{ step: 5 }}
-                              doubleClick={{ mode: 'toggle', step: 0.7 }}
-                            >
-                              {({ zoomIn, zoomOut, resetTransform }) => (
-                                <>
-                                  <div className="absolute top-2 left-2 z-10 flex gap-1">
-                                    <button onClick={() => zoomIn()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">+</button>
-                                    <button onClick={() => zoomOut()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">−</button>
-                                    <button onClick={() => resetTransform()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">⌂</button>
-                                  </div>
-                                  <TransformComponent 
-                                    wrapperStyle={{ width: '100%', height: '100%' }} 
-                                    contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                  >
-                                    <img 
-                                      src={m.mapData.azureData.static_url} 
-                                      alt="Comparison visualization" 
-                                      style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} 
-                                      draggable={false} 
-                                    />
-                                  </TransformComponent>
-                                </>
-                              )}
-                            </TransformWrapper>
-                          </div>
-                          <div className="mt-2 text-sm text-gray-500 flex justify-between items-center">
-                            <span className="text-xs">📊 Side-by-side comparison • Scroll to zoom, drag to pan</span>
-                            <a 
-                              href={m.mapData.azureData.static_url} 
-                              download="comparison.png" 
-                              className="text-indigo-600 hover:text-indigo-800 text-xs"
-                            >
-                              Download
-                            </a>
-                          </div>
-                        </div>
-                      ) : (
-                        // NORMAL MODE
-                        <>
-                          {/* ✅ SIDE-BY-SIDE LAYOUT when both exist */}
-                          {m.mapData.azureData?.static_url && (m.mapData.azureData?.use_tiles || m.mapData.azureData?.geojson) ? (
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                              {/* Left: Interactive Map */}
-                              <div>
-                                <h4 className="text-sm font-semibold mb-2">🗺️ Interactive Map</h4>
-                                <AzureMapView 
-                                  mapData={m.mapData} 
-                                  subscriptionKey={AZURE_MAPS_KEY}
-                                  clientId={AZURE_MAPS_CLIENT_ID}
-                                  height="500px"
-                                />
-                                <div className="mt-2 text-sm text-gray-500">
-                                  <span className="text-xs text-green-600">Live Tiles</span>
-                                </div>
-                              </div>
-
-                              {/* Right: Static Map with Legend */}
-                              <div>
-                                <h4 className="text-sm font-semibold mb-2">📊 Static Map</h4>
-                                <div className="border rounded-md overflow-hidden bg-white" style={{ height: '500px' }}>
-                                  <TransformWrapper
-                                    initialScale={1}
-                                    minScale={0.5}
-                                    maxScale={4}
-                                    centerOnInit={true}
-                                    wheel={{ step: 0.1 }}
-                                    pinch={{ step: 5 }}
-                                    doubleClick={{ mode: 'toggle', step: 0.7 }}
-                                  >
-                                    {({ zoomIn, zoomOut, resetTransform }) => (
-                                      <>
-                                        <div className="absolute top-2 left-2 z-10 flex gap-1">
-                                          <button onClick={() => zoomIn()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">+</button>
-                                          <button onClick={() => zoomOut()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">−</button>
-                                          <button onClick={() => resetTransform()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">⌂</button>
-                                        </div>
-                                        <TransformComponent 
-                                          wrapperStyle={{ width: '100%', height: '100%' }} 
-                                          contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                        >
-                                          <img 
-                                            src={m.mapData.azureData.static_url} 
-                                            alt="Static map" 
-                                            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} 
-                                            draggable={false} 
-                                          />
-                                        </TransformComponent>
-                                      </>
-                                    )}
-                                  </TransformWrapper>
-                                </div>
-                                <div className="mt-2 text-sm text-gray-500 flex justify-between items-center">
-                                  <span className="text-xs">💡 Scroll to zoom</span>
-                                  <a 
-                                    href={m.mapData.azureData.static_url} 
-                                    download="static-map.png" 
-                                    className="text-indigo-600 hover:text-indigo-800 text-xs"
-                                  >
-                                    Download
-                                  </a>
-                                </div>
-                              </div>
-                            </div>
-                          ) : (
-                            // Only one type exists - show full-width
-                            <>
-                              {/* Interactive Map */}
-                              {(m.mapData.azureData?.use_tiles || m.mapData.azureData?.geojson) && (
-                                <div>
-                                  <h4 className="text-sm font-semibold mb-2">🗺️ Interactive Azure Maps</h4>
-                                  <AzureMapView 
-                                    mapData={m.mapData} 
-                                    subscriptionKey={AZURE_MAPS_KEY}
-                                    clientId={AZURE_MAPS_CLIENT_ID}
-                                    height="500px"
-                                  />
-                                  <div className="mt-2 text-sm text-gray-500">
-                                    <span className="text-xs text-green-600">Live Data</span>
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Static Map - only if interactive doesn't exist */}
-                              {m.mapData.azureData?.static_url && !(m.mapData.azureData?.use_tiles || m.mapData.azureData?.geojson) && (
-                                <div>
-                                  <h4 className="text-sm font-semibold mb-2">📊 Static Map with Legend</h4>
-                                  <div className="border rounded-md overflow-hidden bg-white" style={{ height: '500px' }}>
-                                    <TransformWrapper
-                                      initialScale={1}
-                                      minScale={0.5}
-                                      maxScale={4}
-                                      centerOnInit={true}
-                                      wheel={{ step: 0.1 }}
-                                      pinch={{ step: 5 }}
-                                      doubleClick={{ mode: 'toggle', step: 0.7 }}
-                                    >
-                                      {({ zoomIn, zoomOut, resetTransform }) => (
-                                        <>
-                                          <div className="absolute top-2 left-2 z-10 flex gap-1">
-                                            <button onClick={() => zoomIn()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">+</button>
-                                            <button onClick={() => zoomOut()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">−</button>
-                                            <button onClick={() => resetTransform()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">⌂</button>
-                                          </div>
-                                          <TransformComponent 
-                                            wrapperStyle={{ width: '100%', height: '100%' }} 
-                                            contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                          >
-                                            <img 
-                                              src={m.mapData.azureData.static_url} 
-                                              alt="Static map" 
-                                              style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} 
-                                              draggable={false} 
-                                            />
-                                          </TransformComponent>
-                                        </>
-                                      )}
-                                    </TransformWrapper>
-                                  </div>
-                                  <div className="mt-2 text-sm text-gray-500 flex justify-between items-center">
-                                    <span className="text-xs">💡 Scroll to zoom, drag to pan</span>
-                                    <a 
-                                      href={m.mapData.azureData.static_url} 
-                                      download="static-map.png" 
-                                      className="text-indigo-600 hover:text-indigo-800 text-xs"
-                                    >
-                                      Download
-                                    </a>
-                                  </div>
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </>
-                      )}
+                    <div className="mt-3">
+                      <AzureMapView
+                        mapData={m.mapData}
+                        subscriptionKey={AZURE_MAPS_KEY}
+                        clientId={AZURE_MAPS_CLIENT_ID}
+                        height="500px"
+                      />
                     </div>
                   )}
-
-                  {/* Fallback image */}
-                  {!m.mapData && m.imageUrl && (
+                  
+                  {/* ✅ SHOW STATIC PNG WITH DOWNLOAD BUTTON (if static_url exists in mapData OR imageUrl) */}
+                  {(m.mapData?.azureData?.static_url || m.imageUrl) && (
                     <div className="mt-3">
-                      <div className="border rounded-md overflow-hidden bg-white" style={{ height: '500px' }}>
-                        <TransformWrapper
-                          initialScale={1}
-                          minScale={0.5}
-                          maxScale={4}
-                          centerOnInit={true}
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-sm font-semibold text-gray-700">Static Map with Legend:</span>
+                        <a 
+                          href={m.mapData?.azureData?.static_url || m.imageUrl || '#'} 
+                          download="static-map.png"
+                          className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
                         >
-                          {({ zoomIn, zoomOut, resetTransform }) => (
-                            <>
-                              <div className="absolute top-2 left-2 z-10 flex gap-1">
-                                <button onClick={() => zoomIn()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">+</button>
-                                <button onClick={() => zoomOut()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">−</button>
-                                <button onClick={() => resetTransform()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">⌂</button>
-                              </div>
-                              <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }} contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <img src={m.imageUrl} alt="visualization" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} draggable={false} />
-                              </TransformComponent>
-                            </>
-                          )}
-                        </TransformWrapper>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                          Download PNG
+                        </a>
                       </div>
+                      <TransformWrapper
+                        initialScale={1}
+                        minScale={0.5}
+                        maxScale={4}
+                        centerOnInit={true}
+                        wheel={{ step: 0.1 }}
+                        pinch={{ step: 5 }}
+                        doubleClick={{ mode: 'toggle', step: 0.7 }}
+                      >
+                        {({ zoomIn, zoomOut, resetTransform }) => (
+                          <>
+                            <div className="absolute top-2 left-2 z-10 flex gap-1">
+                              <button onClick={() => zoomIn()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">+</button>
+                              <button onClick={() => zoomOut()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">−</button>
+                              <button onClick={() => resetTransform()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">⌂</button>
+                            </div>
+                            <TransformComponent 
+                              wrapperStyle={{ width: '100%', height: '400px' }} 
+                              contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            >
+                              <img
+                                src={m.mapData?.azureData?.static_url || m.imageUrl || ''}
+                                alt="Static map visualization"
+                                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                                className="rounded border border-gray-300"
+                                draggable={false}
+                              />
+                            </TransformComponent>
+                          </>
+                        )}
+                      </TransformWrapper>
                     </div>
                   )}
                 </div>
               </div>
             ))}
+            
+            {/* ✅ 1. PROCESSING INDICATOR ON THE LEFT */}
+            {loading && (
+              <div className="flex justify-start">
+                <div className="bg-white border border-gray-200 rounded-xl rounded-tl-none shadow p-4">
+                  <div className="flex items-center space-x-3">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600"></div>
+                    <span className="text-gray-600">Agent is processing your request...</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             <div ref={endRef} />
           </div>
 
@@ -681,15 +538,26 @@ export default function Chat() {
             </div>
             {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
           </form>
-
-          {debug && (
-            <details className="p-4 border-t bg-gray-50">
-              <summary className="cursor-pointer text-sm text-gray-600">Debug Info</summary>
-              <pre className="mt-2 text-xs overflow-auto">{JSON.stringify(debug, null, 2)}</pre>
-            </details>
-          )}
         </div>
       </div>
+
+      {/* ✅ 2. DEBUG PANEL AT BOTTOM AS A BOX */}
+      {debug && (
+        <div className="fixed bottom-4 right-4 w-96 max-h-64 bg-gray-800 text-white rounded-lg shadow-xl overflow-hidden z-50">
+          <div className="bg-gray-700 px-4 py-2 flex justify-between items-center">
+            <span className="text-sm font-semibold">Debug Info</span>
+            <button
+              onClick={() => setDebug(null)}
+              className="text-gray-400 hover:text-white text-lg leading-none"
+            >
+              ×
+            </button>
+          </div>
+          <div className="p-4 overflow-auto max-h-52">
+            <pre className="text-xs whitespace-pre-wrap">{JSON.stringify(debug, null, 2)}</pre>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
