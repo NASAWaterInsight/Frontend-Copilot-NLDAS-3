@@ -353,12 +353,24 @@ export default function Chat() {
         }
       }
 
+      // Check for errors in the response
+      let hasError = false
+      let errorMessage = ''
+
+      if (r?.analysis_data?.status === 'error') {
+        hasError = true
+        errorMessage = r.analysis_data.error || 'An error occurred during analysis'
+      }
+
+      // Create the assistant message with error handling
       const assistantMsg: Message = {
         id: String(Date.now() + 1),
         role: 'assistant',
-        text: (cleanContent || 'Analysis completed.').replace(/https?:\/\/[^\s]+/g, '').trim() || 'Analysis completed.',
-        imageUrl: imageUrl,
-        mapData: mapData
+        text: hasError 
+          ? `⚠️ Error: ${errorMessage}\n\n${r?.analysis_data?.suggestion ? `💡 Suggestion: ${r.analysis_data.suggestion}` : ''}`
+          : (cleanContent || 'Analysis completed.').replace(/https?:\/\/[^\s]+/g, '').trim() || 'Analysis completed.',
+        imageUrl: hasError ? null : imageUrl,
+        mapData: hasError ? undefined : mapData
       }
 
       setMessages((prev) => [...prev, assistantMsg])
@@ -436,73 +448,79 @@ export default function Chat() {
               <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-full ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-xl rounded-tr-none max-w-[85%]' : 'bg-white text-gray-900 rounded-xl rounded-tl-none shadow'} p-4`}>
                   {m.text && <div className="whitespace-pre-wrap">{m.text}</div>}
-                  
-                  {/* ✅ SHOW AZURE MAPS FIRST (if mapData exists) */}
-                  {m.mapData && AZURE_MAPS_KEY && (
-                    <div className="mt-3">
-                      <AzureMapView
-                        mapData={m.mapData}
-                        subscriptionKey={AZURE_MAPS_KEY}
-                        clientId={AZURE_MAPS_CLIENT_ID}
-                        height="500px"
-                      />
-                    </div>
-                  )}
-                  
-                  {/* ✅ SHOW STATIC PNG WITH DOWNLOAD BUTTON (if static_url exists in mapData OR imageUrl) */}
-                  {(m.mapData?.azureData?.static_url || m.imageUrl) && (
-                    <div className="mt-3">
-                      <div className="mb-2 flex items-center justify-between">
-                        <span className="text-sm font-semibold text-gray-700">Static Map with Legend:</span>
-                        <a 
-                          href={m.mapData?.azureData?.static_url || m.imageUrl || '#'} 
-                          download="static-map.png"
-                          className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                          </svg>
-                          Download PNG
-                        </a>
-                      </div>
-                      <TransformWrapper
-                        initialScale={1}
-                        minScale={0.5}
-                        maxScale={4}
-                        centerOnInit={true}
-                        wheel={{ step: 0.1 }}
-                        pinch={{ step: 5 }}
-                        doubleClick={{ mode: 'toggle', step: 0.7 }}
-                      >
-                        {({ zoomIn, zoomOut, resetTransform }) => (
-                          <>
-                            <div className="absolute top-2 left-2 z-10 flex gap-1">
-                              <button onClick={() => zoomIn()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">+</button>
-                              <button onClick={() => zoomOut()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">−</button>
-                              <button onClick={() => resetTransform()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">⌂</button>
-                            </div>
-                            <TransformComponent 
-                              wrapperStyle={{ width: '100%', height: '400px' }} 
-                              contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                
+                  {/* ✅ SIDE-BY-SIDE MAPS LAYOUT */}
+                  {(m.mapData || m.imageUrl) && (
+                    <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {/* Azure Map */}
+                      {m.mapData && AZURE_MAPS_KEY && (
+                        <div>
+                          <div className="text-sm font-semibold text-gray-700 mb-2">Interactive Map:</div>
+                          <AzureMapView
+                            mapData={m.mapData}
+                            subscriptionKey={AZURE_MAPS_KEY}
+                            clientId={AZURE_MAPS_CLIENT_ID}
+                            height="500px"
+                          />
+                        </div>
+                      )}
+                      
+                      {/* Static PNG */}
+                      {(m.mapData?.azureData?.static_url || m.imageUrl) && (
+                        <div>
+                          <div className="mb-2 flex items-center justify-between">
+                            <span className="text-sm font-semibold text-gray-700">Static Map with Legend:</span>
+                            <a 
+                              href={m.mapData?.azureData?.static_url || m.imageUrl || '#'} 
+                              download="static-map.png"
+                              className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
                             >
-                              <img
-                                src={m.mapData?.azureData?.static_url || m.imageUrl || ''}
-                                alt="Static map visualization"
-                                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
-                                className="rounded border border-gray-300"
-                                draggable={false}
-                              />
-                            </TransformComponent>
-                          </>
-                        )}
-                      </TransformWrapper>
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                              </svg>
+                              Download PNG
+                            </a>
+                          </div>
+                          <TransformWrapper
+                            initialScale={1}
+                            minScale={0.5}
+                            maxScale={4}
+                            centerOnInit={true}
+                            wheel={{ step: 0.1 }}
+                            pinch={{ step: 5 }}
+                            doubleClick={{ mode: 'toggle', step: 0.7 }}
+                          >
+                            {({ zoomIn, zoomOut, resetTransform }) => (
+                              <>
+                                <div className="absolute top-2 left-2 z-10 flex gap-1">
+                                  <button onClick={() => zoomIn()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">+</button>
+                                  <button onClick={() => zoomOut()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">−</button>
+                                  <button onClick={() => resetTransform()} className="bg-white/90 hover:bg-white text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm shadow-sm">⌂</button>
+                                </div>
+                                <TransformComponent 
+                                  wrapperStyle={{ width: '100%', height: '500px' }} 
+                                  contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                >
+                                  <img
+                                    src={m.mapData?.azureData?.static_url || m.imageUrl || ''}
+                                    alt="Static map visualization"
+                                    style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                                    className="rounded border border-gray-300"
+                                    draggable={false}
+                                  />
+                                </TransformComponent>
+                              </>
+                            )}
+                          </TransformWrapper>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
               </div>
             ))}
             
-            {/* ✅ 1. PROCESSING INDICATOR ON THE LEFT */}
+            {/* ✅ PROCESSING INDICATOR */}
             {loading && (
               <div className="flex justify-start">
                 <div className="bg-white border border-gray-200 rounded-xl rounded-tl-none shadow p-4">
@@ -541,19 +559,57 @@ export default function Chat() {
         </div>
       </div>
 
-      {/* ✅ 2. DEBUG PANEL AT BOTTOM AS A BOX */}
+      {/* Debug Panel - Send to Chat with Error Highlighting */}
       {debug && (
-        <div className="fixed bottom-4 right-4 w-96 max-h-64 bg-gray-800 text-white rounded-lg shadow-xl overflow-hidden z-50">
-          <div className="bg-gray-700 px-4 py-2 flex justify-between items-center">
-            <span className="text-sm font-semibold">Debug Info</span>
-            <button
-              onClick={() => setDebug(null)}
-              className="text-gray-400 hover:text-white text-lg leading-none"
-            >
-              ×
-            </button>
+        <div className={`fixed bottom-4 right-4 w-96 max-h-64 ${
+          debug?.analysis_data?.status === 'error' 
+            ? 'bg-red-900 border-2 border-red-500' 
+            : 'bg-gray-800'
+        } text-white rounded-lg shadow-xl overflow-hidden z-50`}>
+          <div className={`${
+            debug?.analysis_data?.status === 'error' 
+              ? 'bg-red-800' 
+              : 'bg-gray-700'
+          } px-4 py-2 flex justify-between items-center`}>
+            <span className="text-sm font-semibold">
+              {debug?.analysis_data?.status === 'error' ? '⚠️ Error Debug Info' : 'Debug Info'}
+            </span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  const debugMsg: Message = {
+                    id: String(Date.now()),
+                    role: 'assistant',
+                    text: `🐛 ${debug?.analysis_data?.status === 'error' ? 'Error ' : ''}Debug Information:\n\n${JSON.stringify(debug, null, 2)}`
+                  }
+                  setMessages(prev => [...prev, debugMsg])
+                  setDebug(null)
+                }}
+                className="text-xs bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded"
+              >
+                📤 Send to Chat
+              </button>
+              <button
+                onClick={() => setDebug(null)}
+                className="text-gray-400 hover:text-white text-lg leading-none"
+              >
+                ×
+              </button>
+            </div>
           </div>
           <div className="p-4 overflow-auto max-h-52">
+            {/* Highlight error section if present */}
+            {debug?.analysis_data?.status === 'error' && (
+              <div className="bg-red-800/50 border border-red-500 rounded p-2 mb-2">
+                <div className="font-bold text-red-200">Error:</div>
+                <div className="text-sm">{debug.analysis_data.error}</div>
+                {debug.analysis_data.suggestion && (
+                  <div className="mt-2 text-yellow-200 text-xs">
+                    💡 {debug.analysis_data.suggestion}
+                  </div>
+                )}
+              </div>
+            )}
             <pre className="text-xs whitespace-pre-wrap">{JSON.stringify(debug, null, 2)}</pre>
           </div>
         </div>
