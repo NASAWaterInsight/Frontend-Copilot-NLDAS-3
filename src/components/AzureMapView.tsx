@@ -455,14 +455,16 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           if (hasGeoJsonData) {
             console.log('🎯 Adding hover interactions for tile + GeoJSON')
             const variable = tileConfig.variable || 'temperature'
-            const unit = mapData.azureData.geojson.features[0]?.properties?.unit || '°C'
+            // ✅ FIXED: Don't default to '°C', keep empty string for unitless variables
+            const unit = mapData.azureData.geojson.features[0]?.properties?.unit ?? ''
 
             const temperatureData = mapData.azureData.geojson.features.map((feature: any) => ({
               latitude: feature.geometry.coordinates[1],
               longitude: feature.geometry.coordinates[0],
               value: feature.properties.value,
               variable: feature.properties.variable || variable,
-              unit: feature.properties.unit || unit
+              // ✅ FIXED: Use ?? to preserve empty strings
+              unit: feature.properties.unit ?? ''
             }))
 
             processTemperatureData(temperatureData, variable, unit)
@@ -477,14 +479,16 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           if (hasGeoJsonData) {
             console.log('🎯 Adding hover interactions for PNG + GeoJSON')
             const variable = mapData.azureData?.geojson?.features?.[0]?.properties?.variable || 'temperature'
-            const unit = mapData.azureData?.geojson?.features?.[0]?.properties?.unit || '°C'
+            // ✅ FIXED: Don't default to '°C', keep empty string for unitless variables
+            const unit = mapData.azureData?.geojson?.features?.[0]?.properties?.unit ?? ''
 
             const temperatureData = mapData.azureData.geojson.features.map((feature: any) => ({
               latitude: feature.geometry.coordinates[1],
               longitude: feature.geometry.coordinates[0],
               value: feature.properties.value,
               variable: feature.properties.variable,
-              unit: feature.properties.unit
+              // ✅ FIXED: Use ?? to preserve empty strings
+              unit: feature.properties.unit ?? ''
             }))
 
             processTemperatureData(temperatureData, variable, unit)
@@ -713,14 +717,49 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
               })
               
               if (nearestPoint && minDistance < adaptiveRadius) {
-                const displayValue = nearestPoint.value.toFixed(2)
+                // ✅ FIXED: Dynamic precision based on variable type and value magnitude
+                let displayValue: string
+                const value = nearestPoint.value
+                
+                // Determine appropriate decimal places based on variable and value magnitude
+                if (variable.toLowerCase().includes('qair') || variable.toLowerCase().includes('humidity')) {
+                  // For humidity values (often very small decimals)
+                  if (Math.abs(value) < 0.001) {
+                    displayValue = value.toExponential(2) // Scientific notation for very small values
+                  } else if (Math.abs(value) < 0.1) {
+                    displayValue = value.toFixed(4) // 4 decimal places for small values
+                  } else {
+                    displayValue = value.toFixed(2) // 2 decimal places for larger values
+                  }
+                } else if (variable.toLowerCase().includes('temp')) {
+                  // Temperature values
+                  displayValue = value.toFixed(1)
+                } else if (variable.toLowerCase().includes('precip') || variable.toLowerCase().includes('rain')) {
+                  // Precipitation values
+                  displayValue = value.toFixed(2)
+                } else if (variable.toLowerCase().includes('spi')) {
+                  // SPI values (drought index)
+                  displayValue = value.toFixed(2)
+                } else {
+                  // Default: dynamic precision based on magnitude
+                  if (Math.abs(value) < 0.001) {
+                    displayValue = value.toExponential(2)
+                  } else if (Math.abs(value) < 0.1) {
+                    displayValue = value.toFixed(4)
+                  } else if (Math.abs(value) < 10) {
+                    displayValue = value.toFixed(3)
+                  } else {
+                    displayValue = value.toFixed(1)
+                  }
+                }
+                
                 const variableDisplay = getVariableDisplayName(variable)
                 
                 const popupContent = `
                   <div style="padding: 8px; min-width: 140px; font-size: 12px; font-family: system-ui;">
                     <div style="font-weight: bold; color: #2563eb; margin-bottom: 4px;">${variableDisplay}</div>
                     <div style="font-size: 14px; font-weight: bold; color: #dc2626;">
-                      ${displayValue} ${unit}
+                      ${displayValue}${unit ? ' ' + unit : ''}
                     </div>
                     <div style="font-size: 10px; color: #6b7280; margin-top: 4px;">
                       ${nearestPoint.latitude.toFixed(3)}°, ${nearestPoint.longitude.toFixed(3)}°
@@ -756,7 +795,17 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
             'temperature': 'Temperature',
             'temp': 'Temperature',
             'Rainf': 'Precipitation',
-            'precipitation': 'Precipitation'
+            'precipitation': 'Precipitation',
+            // ✅ FIXED: Add proper humidity display names
+            'Qair': 'Specific Humidity',
+            'Qair_f_inst': 'Specific Humidity', 
+            'RelHum': 'Relative Humidity',
+            'humidity': 'Relative Humidity',
+            // ✅ ADD: SPI display names
+            'SPI': 'SPI (Drought Index)',
+            'SPI3': 'SPI-3 (1-Month Drought)',
+            'spi': 'SPI (Drought Index)',
+            'spi3': 'SPI-3 (1-Month Drought)'
           }
           return nameMap[variable] || variable.replace(/_/g, ' ')
         }

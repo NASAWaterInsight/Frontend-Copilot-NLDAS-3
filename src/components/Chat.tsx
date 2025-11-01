@@ -115,7 +115,7 @@ export default function Chat() {
       'RelHum': 'Relative Humidity',
       'humidity': 'Relative Humidity',
       'SPI': 'SPI (Drought Index)',
-      'SPI3': 'SPI-3 (3-Month Drought)',
+      'SPI3': 'SPI-3 (1-Month Drought)',
       'spi': 'SPI (Drought Index)',
       'temperature': 'Temperature'
     }
@@ -182,6 +182,41 @@ export default function Chat() {
         return value.toFixed(1)
       }
     }
+  }
+
+  // ✅ UPDATED: Helper function to extract both markdown images AND links
+  function extractMarkdownImage(text: string): { imageUrl: string | null, cleanText: string } {
+    // Check for markdown image syntax first: ![...](url)
+    let markdownImageMatch = text.match(/!\[.*?\]\((https?:\/\/[^\s)]+)\)/)
+    
+    if (markdownImageMatch) {
+      const imageUrl = markdownImageMatch[1]
+      const cleanText = text
+        .replace(/!\[.*?\]\(https?:\/\/[^\s)]+\)/g, '') // Remove markdown images
+        .replace(/\[.*?\]\(https?:\/\/[^\s)]+\)/g, '') // Remove markdown links  
+        .trim()
+        .replace(/\n\s*\n/g, '\n') // Clean up extra newlines
+      
+      console.log('📷 Detected markdown IMAGE syntax, extracted URL:', imageUrl)
+      return { imageUrl, cleanText }
+    }
+    
+    // ✅ NEW: Also check for markdown link syntax: [...](url) pointing to image files
+    const markdownLinkMatch = text.match(/\[.*?\]\((https?:\/\/[^\s)]+\.(?:png|jpg|jpeg|gif|webp|svg)[^\s)]*)\)/i)
+    
+    if (markdownLinkMatch) {
+      const imageUrl = markdownLinkMatch[1]
+      const cleanText = text
+        .replace(/\[.*?\]\(https?:\/\/[^\s)]+\.(?:png|jpg|jpeg|gif|webp|svg)[^\s)]*\)/gi, '') // Remove markdown links to images
+        .trim()
+        .replace(/\n\s*\n/g, '\n') // Clean up extra newlines
+      
+      console.log('📷 Detected markdown LINK to image file, extracted URL:', imageUrl)
+      return { imageUrl, cleanText }
+    }
+    
+    // No markdown detected - return original text unchanged
+    return { imageUrl: null, cleanText: text }
   }
 
   async function handleSubmit(e?: React.FormEvent) {
@@ -260,8 +295,20 @@ export default function Chat() {
         cleanContent = typeof r.content === 'string' ? r.content : ''
       }
 
-      // ✅ Strip URLs from content if needed
-      if (typeof cleanContent === 'string' && cleanContent) {
+      // ✅ NEW: Check for markdown image OR link syntax and extract if present
+      let markdownExtractedUrl = null
+      if (typeof cleanContent === 'string' && 
+          (cleanContent.includes('![') || (cleanContent.includes('[') && cleanContent.includes('](')))) {
+        const extracted = extractMarkdownImage(cleanContent)
+        if (extracted.imageUrl) {
+          markdownExtractedUrl = extracted.imageUrl
+          cleanContent = extracted.cleanText
+          console.log('✅ Processed markdown syntax, using extracted URL')
+        }
+      }
+
+      // ✅ ONLY strip URLs if NOT from markdown (preserve existing behavior)
+      if (!markdownExtractedUrl && typeof cleanContent === 'string' && cleanContent) {
         const hasSubstantialText = cleanContent.length > 30 && /[a-zA-Z]/.test(cleanContent)
         const looksLikeAnswer = /\b(is|are|average|total|maximum|minimum|speed|temperature|value)\b/i.test(cleanContent)
         
@@ -424,6 +471,12 @@ export default function Chat() {
       } else {
         console.log('❌ No map artifacts found')
         imageUrl = r?.content?.match(/https?:\/\/[^\s]+/)?.[0] || null
+      }
+
+      // ✅ Use markdown-extracted URL first, then fall back to existing logic
+      if (markdownExtractedUrl) {
+        imageUrl = markdownExtractedUrl
+        console.log('✅ Using markdown-extracted image URL')
       }
 
       const assistantMsg: Message = {
