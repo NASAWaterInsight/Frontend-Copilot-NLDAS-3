@@ -400,86 +400,116 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
 
         // ===== END TILE DEBUG HELPERS =============================
 
-        // ✅ PRIORITY 1: Use tile-based rendering if available
+        // ✅ PRIORITY 1: STRICT TILE VALIDATION - Only render tiles if proper format exists
         if (useTiles && tileConfig && tileConfig.tile_url) {
-          console.log('🗺️ ====== USING TILE-BASED RENDERING ======')
+          console.log('🗺️ ====== CHECKING TILE FORMAT VALIDATION ======')
           console.log('Tile URL template:', tileConfig.tile_url)
 
-          // ✅ COMPREHENSIVE BACKEND DATA DEBUG
-          console.log('🔍 ===== COMPREHENSIVE BACKEND DATA DEBUG =====')
-          console.log('🔍 Full tileConfig object:', JSON.stringify(tileConfig, null, 2))
-          console.log('🔍 Backend tile_list exists:', !!tileConfig.tile_list)
-          console.log('🔍 Backend tile_list type:', typeof tileConfig.tile_list)
-          console.log('🔍 Backend tile_list is array:', Array.isArray(tileConfig.tile_list))
-          console.log('🔍 Backend tile_list length:', tileConfig.tile_list?.length)
-          console.log('🔍 Backend tile_list content:', tileConfig.tile_list)
-          console.log('🔍 Backend region_bounds:', tileConfig.region_bounds)
-          console.log('🔍 Backend tile_count:', tileConfig.tile_count)
-          console.log('🔍 Backend color_scale:', tileConfig.color_scale)
-          console.log('🔍 Backend min_zoom:', tileConfig.min_zoom)
-          console.log('🔍 Backend max_zoom:', tileConfig.max_zoom)
-          console.log('🔍 Backend tile_size:', tileConfig.tile_size)
-          console.log('🔍 Backend variable:', tileConfig.variable)
-          console.log('🔍 Backend date:', tileConfig.date)
-          
-          if (tileConfig.tile_list && Array.isArray(tileConfig.tile_list) && tileConfig.tile_list.length > 0) {
-            console.log('🔍 First tile details:', JSON.stringify(tileConfig.tile_list[0], null, 2))
-            console.log('🔍 First tile URL:', tileConfig.tile_list[0]?.url)
-            console.log('🔍 First tile bounds:', tileConfig.tile_list[0]?.bounds)
-            console.log('🔍 First tile coordinates:', tileConfig.tile_list[0]?.x, tileConfig.tile_list[0]?.y, tileConfig.tile_list[0]?.z)
-          }
-          console.log('🔍 ===== END COMPREHENSIVE DEBUG =====')
+          // ✅ STRICT VALIDATION: Must have proper tile_list with valid entries
+          const hasValidTileList = (
+            tileConfig.tile_list && 
+            Array.isArray(tileConfig.tile_list) && 
+            tileConfig.tile_list.length > 0 &&
+            tileConfig.tile_list.every((tile: any) => 
+              tile && 
+              typeof tile.url === 'string' && 
+              tile.url.startsWith('http') &&
+              tile.bounds &&
+              typeof tile.z === 'number' &&
+              typeof tile.x === 'number' &&
+              typeof tile.y === 'number'
+            )
+          )
 
-          console.log('🔍 TILE_LIST DEBUG:', {
-            tile_list_exists: !!tileConfig.tile_list,
-            is_array: Array.isArray(tileConfig.tile_list),
-            length: tileConfig.tile_list?.length,
-            first_tile: tileConfig.tile_list?.[0]
-          })
-          
-          // ✅ Check if backend provided specific tile list
-          if (tileConfig.tile_list && Array.isArray(tileConfig.tile_list)) {
-            console.log(`🎯 ===== USING BACKEND TILE LIST =====`)
-            console.log(`🎯 Loading ${tileConfig.tile_list.length} specific tiles from backend`)
-            console.log(`🎯 Backend says we should have ${tileConfig.tile_count} tiles`)
+          // ✅ ENHANCED VALIDATION: Check if tile URLs follow expected pattern
+          let hasValidTilePattern = false
+          if (hasValidTileList) {
+            const firstTile = tileConfig.tile_list[0]
+            const expectedPattern = tileConfig.tile_url
+              .replace('{z}', firstTile.z.toString())
+              .replace('{x}', firstTile.x.toString())
+              .replace('{y}', firstTile.y.toString())
+            
+            hasValidTilePattern = firstTile.url.includes(firstTile.z.toString()) &&
+                                 firstTile.url.includes(firstTile.x.toString()) &&
+                                 firstTile.url.includes(firstTile.y.toString())
+            
+            console.log('🔍 Tile pattern validation:', {
+              expectedPattern,
+              actualUrl: firstTile.url,
+              hasValidPattern: hasValidTilePattern
+            })
+          }
+
+          console.log('🔍 ===== TILE FORMAT VALIDATION RESULTS =====')
+          console.log('🔍 use_tiles:', useTiles)
+          console.log('🔍 has tile_config:', !!tileConfig)
+          console.log('🔍 has tile_url:', !!tileConfig.tile_url)
+          console.log('🔍 has valid tile_list:', hasValidTileList)
+          console.log('🔍 has valid tile pattern:', hasValidTilePattern)
+          console.log('🔍 tile_list length:', tileConfig.tile_list?.length)
+          console.log('🔍 ===== END VALIDATION =====')
+
+          // ✅ ONLY PROCEED IF ALL VALIDATIONS PASS
+          if (hasValidTileList && hasValidTilePattern) {
+            console.log(`🎯 ===== USING BACKEND TILE LIST (VALIDATED) =====`)
+            console.log(`🎯 Loading ${tileConfig.tile_list.length} validated tiles from backend`)
             console.log(`🎯 Backend region bounds:`, tileConfig.region_bounds)
             loadBackendTiles(tileConfig.tile_list)
+
+            // Add hover interactions for GeoJSON data
+            if (hasGeoJsonData) {
+              console.log('🎯 Adding hover interactions for tile + GeoJSON')
+              const variable = tileConfig.variable || 'temperature'
+              const unit = mapData.azureData.geojson.features[0]?.properties?.unit ?? ''
+
+              const temperatureData = mapData.azureData.geojson.features.map((feature: any) => ({
+                latitude: feature.geometry.coordinates[1],
+                longitude: feature.geometry.coordinates[0],
+                value: feature.properties.value,
+                variable: feature.properties.variable || variable,
+                unit: feature.properties.unit ?? ''
+              }))
+
+              processTemperatureData(temperatureData, variable, unit)
+            }
           } else {
-            console.log('🔧 ===== FALLBACK TO MANUAL TILE GENERATION =====')
-            console.log('🔧 Reason: No tile_list from backend')
-            console.log('🔧 Will attempt to generate tiles manually')
-            addTileLayer(tileConfig)
-          }
-
-          // Add hover interactions for GeoJSON data
-          if (hasGeoJsonData) {
-            console.log('🎯 Adding hover interactions for tile + GeoJSON')
-            const variable = tileConfig.variable || 'temperature'
-            // ✅ FIXED: Don't default to '°C', keep empty string for unitless variables
-            const unit = mapData.azureData.geojson.features[0]?.properties?.unit ?? ''
-
-            const temperatureData = mapData.azureData.geojson.features.map((feature: any) => ({
-              latitude: feature.geometry.coordinates[1],
-              longitude: feature.geometry.coordinates[0],
-              value: feature.properties.value,
-              variable: feature.properties.variable || variable,
-              // ✅ FIXED: Use ?? to preserve empty strings
-              unit: feature.properties.unit ?? ''
-            }))
-
-            processTemperatureData(temperatureData, variable, unit)
+            console.log('❌ ===== TILE VALIDATION FAILED - SKIPPING TILE OVERLAY =====')
+            console.log('❌ Reason: Invalid tile format or missing tile_list')
+            console.log('❌ This appears to be a non-tile response (static image, time series, etc.)')
+            console.log('❌ Will NOT overlay anything on Azure Maps')
+            
+            // ✅ IMPORTANT: Do not fall back to PNG overlay for invalid tile responses
+            // This prevents static images from being overlaid on maps incorrectly
           }
         }
-        // ✅ PRIORITY 2: Fall back to PNG overlay ONLY if not using tiles
-        else if ((overlayUrl || staticUrl) && hasBounds) {
-          console.log('📸 ====== FALLING BACK TO PNG OVERLAY ======')
-          console.log('Reason: useTiles =', useTiles, ', tileConfig =', !!tileConfig)
-          addPngOverlay()
+        // ✅ PRIORITY 2: PNG overlay ONLY for specific cases with bounds and no tile attempts
+        else if ((overlayUrl || staticUrl) && hasBounds && !useTiles) {
+          console.log('📸 ====== PNG OVERLAY (NON-TILE RESPONSE) ======')
+          console.log('📸 This is a non-tile response with overlay capability')
+          console.log('Reason: useTiles =', useTiles, ', has bounds =', hasBounds)
+          
+          // ✅ ADDITIONAL CHECK: Don't overlay if this looks like a comparison/static visualization
+          const isComparison = staticUrl && (
+            staticUrl.includes('comparison') ||
+            staticUrl.includes('difference') ||
+            staticUrl.includes('_vs_') ||
+            staticUrl.includes('time_series') ||
+            staticUrl.includes('subplot')
+          )
+          
+          if (isComparison) {
+            console.log('📸 ❌ SKIPPING PNG OVERLAY - Detected comparison/static visualization')
+            console.log('📸 This should be displayed as static image only, not map overlay')
+          } else {
+            console.log('📸 ✅ PROCEEDING with PNG overlay for geographic data')
+            addPngOverlay()
+          }
 
+          // Add hover interactions regardless of overlay
           if (hasGeoJsonData) {
             console.log('🎯 Adding hover interactions for PNG + GeoJSON')
             const variable = mapData.azureData?.geojson?.features?.[0]?.properties?.variable || 'temperature'
-            // ✅ FIXED: Don't default to '°C', keep empty string for unitless variables
             const unit = mapData.azureData?.geojson?.features?.[0]?.properties?.unit ?? ''
 
             const temperatureData = mapData.azureData.geojson.features.map((feature: any) => ({
@@ -487,20 +517,41 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
               longitude: feature.geometry.coordinates[0],
               value: feature.properties.value,
               variable: feature.properties.variable,
-              // ✅ FIXED: Use ?? to preserve empty strings
               unit: feature.properties.unit ?? ''
             }))
 
             processTemperatureData(temperatureData, variable, unit)
           }
-        } else {
-          console.log('⚠️ No valid rendering method available')
+        } 
+        // ✅ PRIORITY 3: GeoJSON-only display (no overlays)
+        else if (hasGeoJsonData && !useTiles && !overlayUrl && !staticUrl) {
+          console.log('🎯 ====== GEOJSON-ONLY DISPLAY ======')
+          console.log('🎯 No tiles or overlays, just hover interactions')
+          
+          const variable = mapData.azureData?.geojson?.features?.[0]?.properties?.variable || 'temperature'
+          const unit = mapData.azureData?.geojson?.features?.[0]?.properties?.unit ?? ''
+
+          const temperatureData = mapData.azureData.geojson.features.map((feature: any) => ({
+            latitude: feature.geometry.coordinates[1],
+            longitude: feature.geometry.coordinates[0],
+            value: feature.properties.value,
+            variable: feature.properties.variable || variable,
+            unit: feature.properties.unit ?? ''
+          }))
+
+          processTemperatureData(temperatureData, variable, unit)
+        }
+        else {
+          console.log('ℹ️ ====== NO MAP OVERLAY ======')
+          console.log('ℹ️ This response does not require map overlays')
+          console.log('ℹ️ Likely a static visualization, time series, or text response')
           console.log('Debug info:', {
             useTiles,
             hasTileConfig: !!tileConfig,
             hasOverlay: !!overlayUrl,
             hasStatic: !!staticUrl,
-            hasBounds
+            hasBounds,
+            hasGeoJsonData
           })
         }
 
