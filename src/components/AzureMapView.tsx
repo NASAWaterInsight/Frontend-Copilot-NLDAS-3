@@ -455,14 +455,14 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           if (hasGeoJsonData) {
             console.log('🎯 Adding hover interactions for tile + GeoJSON')
             const variable = tileConfig.variable || 'temperature'
-            const unit = mapData.azureData.geojson.features[0]?.properties?.unit || '°C'
+            const unit = mapData.azureData.geojson.features[0]?.properties?.unit ?? ''
 
             const temperatureData = mapData.azureData.geojson.features.map((feature: any) => ({
               latitude: feature.geometry.coordinates[1],
               longitude: feature.geometry.coordinates[0],
               value: feature.properties.value,
               variable: feature.properties.variable || variable,
-              unit: feature.properties.unit || unit
+              unit: feature.properties.unit ?? unit
             }))
 
             processTemperatureData(temperatureData, variable, unit)
@@ -477,7 +477,7 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           if (hasGeoJsonData) {
             console.log('🎯 Adding hover interactions for PNG + GeoJSON')
             const variable = mapData.azureData?.geojson?.features?.[0]?.properties?.variable || 'temperature'
-            const unit = mapData.azureData?.geojson?.features?.[0]?.properties?.unit || '°C'
+            const unit = mapData.azureData?.geojson?.features?.[0]?.properties?.unit ?? ''
 
             const temperatureData = mapData.azureData.geojson.features.map((feature: any) => ({
               latitude: feature.geometry.coordinates[1],
