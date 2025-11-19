@@ -481,13 +481,12 @@ export default function HydrologyDarkChat() {
 
       {/* Control buttons - STACKED VERTICALLY */}
       <div className="absolute top-4 left-4 flex flex-col gap-2 z-20">
-        <button
-          onClick={forceDebugLog}
-          className="px-3 py-1.5 text-xs bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 rounded-lg transition-all duration-200"
-          title="Toggle debug mode"
-        >
-          🔥 Debug
-        </button>
+        {userId && (
+          <div className="text-xs text-gray-500 px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg">
+            User: {userId.substring(0, 8)}
+            {messages.length > 0 && <span className="text-green-400 ml-2">● Active</span>}
+          </div>
+        )}
         
         <button
           onClick={handleNewConversation}
@@ -497,12 +496,13 @@ export default function HydrologyDarkChat() {
           📝 New Chat
         </button>
         
-        {userId && (
-          <div className="text-xs text-gray-500 px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg">
-            User: {userId.substring(0, 8)}
-            {messages.length > 0 && <span className="text-green-400 ml-2">● Active</span>}
-          </div>
-        )}
+        <button
+          onClick={forceDebugLog}
+          className="px-3 py-1.5 text-xs bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 rounded-lg transition-all duration-200"
+          title="Toggle debug mode"
+        >
+          🔥 Debug
+        </button>
       </div>
 
       {/* Main chat container */}
@@ -551,18 +551,8 @@ export default function HydrologyDarkChat() {
                     {/* Static PNG with Legend */}
                     {(m.mapData?.azureData?.static_url || m.imageUrl) && (
                       <div>
-                        <div className="mb-2 flex items-center justify-between">
+                        <div className="mb-2">
                           <span className="text-sm font-semibold text-gray-300">📊 Static Map with Legend:</span>
-                          <a 
-                            href={m.mapData?.azureData?.static_url || m.imageUrl || '#'} 
-                            download="static-map.png"
-                            className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                            </svg>
-                            Download
-                          </a>
                         </div>
                         <div className="border border-gray-700 rounded-lg overflow-hidden bg-gray-900" style={{ height: '450px' }}>
                           <TransformWrapper
@@ -596,8 +586,20 @@ export default function HydrologyDarkChat() {
                             )}
                           </TransformWrapper>
                         </div>
-                        <div className="mt-2 text-xs text-gray-500">
-                          💡 Scroll to zoom, drag to pan
+                        <div className="mt-2 flex items-center justify-between">
+                          <span className="text-xs text-gray-500">
+                            💡 Scroll to zoom, drag to pan
+                          </span>
+                          <a 
+                            href={m.mapData?.azureData?.static_url || m.imageUrl || '#'} 
+                            download="static-map.png"
+                            className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            Download
+                          </a>
                         </div>
                       </div>
                     )}
