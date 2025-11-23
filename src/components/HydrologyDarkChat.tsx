@@ -435,80 +435,52 @@ export default function HydrologyDarkChat() {
 
   return (
     <div className="min-h-screen text-white flex flex-col" style={{ 
-      background: 'linear-gradient(180deg, #0a1628 0%, #111827 50%, #000000 100%)'
+      background: '#000000'
     }}>
-      {/* NARROWER Header - Title OVERLAID on RIGHT side of image */}
-      <div className="relative w-full overflow-hidden" style={{ height: '280px' }}>
-        {/* Image fills entire width */}
-        <div className="absolute inset-0">
+      {/* Header with integrated logos */}
+      <div className="relative w-full overflow-hidden" style={{ height: '320px', background: '#000000' }}>
+        {/* Image with logos fills entire width */}
+        <div className="absolute inset-0 z-0" style={{ background: '#000000' }}>
           <img 
-            src="/hydrology-visualization.png" 
-            alt="Hydrology Cycle" 
+            src="/total.svg" 
+            alt="Hydrology Cycle with NASA and Microsoft logos" 
             className="w-full h-full object-cover object-left"
             style={{
-              filter: 'drop-shadow(0 10px 40px rgba(0, 150, 255, 0.3))',
-              animation: 'float 6s ease-in-out infinite'
+              animation: 'float 6s ease-in-out infinite',
+              transform: 'scale(1.1)',
+              background: '#000000'
             }}
             onError={(e) => {
-              console.error('❌ Failed to load /hydrology-visualization.png')
+              console.error('❌ Failed to load /total.svg')
               e.currentTarget.style.display = 'none'
             }}
             onLoad={() => {
-              console.log('✅ Successfully loaded /hydrology-visualization.png')
+              console.log('✅ Successfully loaded /total.svg')
             }}
           />
         </div>
         
         {/* Title OVERLAID on top-right of image */}
-        <div className="absolute inset-0 flex items-end justify-end pr-16 pb-10">
+        <div className="absolute bottom-0 right-0 pr-16 pb-18 z-50">
           <div className="text-right">
             <h1 className="text-5xl md:text-6xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent mb-2" style={{
-              textShadow: '0 2px 20px rgba(0, 0, 0, 0.8)'
+              filter: 'drop-shadow(0 0 20px rgba(0, 0, 0, 1)) drop-shadow(0 0 40px rgba(0, 0, 0, 0.8))'
             }}>
               Hydrology Copilot
             </h1>
-            <p className="text-gray-200 text-base" style={{
-              textShadow: '0 1px 10px rgba(0, 0, 0, 0.9)'
+            <p className="text-gray-200 text-base font-medium" style={{
+              textShadow: '0 0 10px rgba(0, 0, 0, 1), 0 0 20px rgba(0, 0, 0, 0.8), 2px 2px 4px rgba(0, 0, 0, 1)'
             }}>
-              Drought Monitoring and Hydrological Data Analysis
+              Hydrological Data Analysis
             </p>
           </div>
         </div>
-        
-        {/* Gradient overlay at bottom */}
-        <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-black to-transparent" />
-      </div>
-
-      {/* Control buttons - STACKED VERTICALLY */}
-      <div className="absolute top-4 left-4 flex flex-col gap-2 z-20">
-        {userId && (
-          <div className="text-xs text-gray-500 px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg">
-            User: {userId.substring(0, 8)}
-            {messages.length > 0 && <span className="text-green-400 ml-2">● Active</span>}
-          </div>
-        )}
-        
-        <button
-          onClick={handleNewConversation}
-          className="px-3 py-1.5 text-xs bg-white/10 hover:bg-white/20 text-gray-300 border border-white/20 rounded-lg transition-all duration-200"
-          title="Start fresh conversation"
-        >
-          📝 New Chat
-        </button>
-        
-        <button
-          onClick={forceDebugLog}
-          className="px-3 py-1.5 text-xs bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 rounded-lg transition-all duration-200"
-          title="Toggle debug mode"
-        >
-          🔥 Debug
-        </button>
       </div>
 
       {/* Main chat container */}
       <div className="flex-1 flex flex-col max-w-6xl mx-auto w-full px-4 pb-4">
         {/* Messages area */}
-        <div className="flex-1 overflow-y-auto py-6 space-y-4" style={{ maxHeight: 'calc(100vh - 430px)' }}>
+        <div className="flex-1 overflow-y-auto py-6 space-y-4" style={{ maxHeight: 'calc(100vh - 470px)' }}>
           {messages.length === 0 && (
             <div className="text-center py-12">
               <p className="text-gray-400 text-lg mb-2">Ask a question to get started</p>
@@ -523,8 +495,8 @@ export default function HydrologyDarkChat() {
               <div className={`max-w-[80%] ${
                 m.role === 'user' 
                   ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl rounded-tr-sm' 
-                  : 'bg-gray-900/80 border border-gray-800 text-gray-100 rounded-2xl rounded-tl-sm'
-              } px-5 py-3 backdrop-blur-sm`}>
+                  : 'bg-black border border-gray-800 text-gray-100 rounded-2xl rounded-tl-sm'
+              } px-5 py-3`}>
                 {m.text && <div className="whitespace-pre-wrap">{m.text}</div>}
                 
                 {/* Side-by-side maps layout */}
@@ -554,7 +526,7 @@ export default function HydrologyDarkChat() {
                         <div className="mb-2">
                           <span className="text-sm font-semibold text-gray-300">📊 Static Map with Legend:</span>
                         </div>
-                        <div className="border border-gray-700 rounded-lg overflow-hidden bg-gray-900" style={{ height: '450px' }}>
+                        <div className="border border-gray-700 rounded-lg overflow-hidden bg-black" style={{ height: '450px' }}>
                           <TransformWrapper
                             initialScale={1}
                             minScale={0.5}
@@ -567,18 +539,18 @@ export default function HydrologyDarkChat() {
                             {({ zoomIn, zoomOut, resetTransform }) => (
                               <>
                                 <div className="absolute top-2 left-2 z-10 flex gap-1">
-                                  <button onClick={() => zoomIn()} className="bg-black/70 hover:bg-black/90 text-white border border-gray-600 rounded px-2 py-1 text-sm">+</button>
-                                  <button onClick={() => zoomOut()} className="bg-black/70 hover:bg-black/90 text-white border border-gray-600 rounded px-2 py-1 text-sm">−</button>
-                                  <button onClick={() => resetTransform()} className="bg-black/70 hover:bg-black/90 text-white border border-gray-600 rounded px-2 py-1 text-sm">⌂</button>
+                                  <button onClick={() => zoomIn()} className="bg-black hover:bg-gray-900 text-white border border-gray-600 rounded px-2 py-1 text-sm">+</button>
+                                  <button onClick={() => zoomOut()} className="bg-black hover:bg-gray-900 text-white border border-gray-600 rounded px-2 py-1 text-sm">−</button>
+                                  <button onClick={() => resetTransform()} className="bg-black hover:bg-gray-900 text-white border border-gray-600 rounded px-2 py-1 text-sm">⌂</button>
                                 </div>
                                 <TransformComponent 
-                                  wrapperStyle={{ width: '100%', height: '100%' }} 
-                                  contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                  wrapperStyle={{ width: '100%', height: '100%', background: '#000000' }} 
+                                  contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000000' }}
                                 >
                                   <img 
                                     src={m.mapData?.azureData?.static_url || m.imageUrl || ''} 
                                     alt="Static map with legend" 
-                                    style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} 
+                                    style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', background: '#000000' }} 
                                     draggable={false} 
                                   />
                                 </TransformComponent>
@@ -612,7 +584,7 @@ export default function HydrologyDarkChat() {
           {/* Loading indicator */}
           {loading && (
             <div className="flex justify-start">
-              <div className="bg-gray-900/80 border border-gray-800 rounded-2xl rounded-tl-sm px-5 py-3">
+              <div className="bg-black border border-gray-800 rounded-2xl rounded-tl-sm px-5 py-3">
                 <div className="flex items-center space-x-3">
                   <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-purple-500"></div>
                   <span className="text-gray-300">Processing your request...</span>
@@ -624,15 +596,41 @@ export default function HydrologyDarkChat() {
           <div ref={endRef} />
         </div>
 
+        {/* Control buttons at bottom-left, above input */}
+        <div className="flex items-center gap-3 mb-3">
+          {userId && (
+            <div className="text-xs text-gray-500 px-3 py-1.5 bg-black border border-gray-800 rounded-lg">
+              User: {userId.substring(0, 8)}
+              {messages.length > 0 && <span className="text-green-400 ml-2">● Active</span>}
+            </div>
+          )}
+          
+          <button
+            onClick={handleNewConversation}
+            className="px-3 py-1.5 text-xs bg-black hover:bg-black text-gray-300 border border-gray-800 rounded-lg transition-all duration-200 hover:border-gray-700"
+            title="Start fresh conversation"
+          >
+            📝 New Chat
+          </button>
+          
+          <button
+            onClick={forceDebugLog}
+            className="px-3 py-1.5 text-xs bg-black hover:bg-black text-red-400 border border-gray-800 rounded-lg transition-all duration-200 hover:border-red-900"
+            title="Toggle debug mode"
+          >
+            🔥 Debug
+          </button>
+        </div>
+
         {/* Input form at bottom */}
-        <form onSubmit={handleSubmit} className="border-t border-gray-800 pt-4 mt-4">
+        <form onSubmit={handleSubmit} className="border-t border-gray-800 pt-4">
           <div className="flex gap-3">
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Ask about hydrology data..."
-              className="flex-1 px-5 py-3 bg-gray-900/50 border border-gray-800 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all duration-200"
+              className="flex-1 px-5 py-3 bg-black border border-gray-800 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all duration-200"
               disabled={loading}
             />
             <button
@@ -652,7 +650,7 @@ export default function HydrologyDarkChat() {
             </button>
           </div>
           {error && (
-            <div className="mt-3 text-sm text-red-400 bg-red-900/20 border border-red-800 rounded-lg px-4 py-2">
+            <div className="mt-3 text-sm text-red-400 bg-black border border-red-800 rounded-lg px-4 py-2">
               {error}
             </div>
           )}
@@ -660,7 +658,7 @@ export default function HydrologyDarkChat() {
 
         {/* Debug panel */}
         {showDebug && debug && (
-          <div className="mt-4 p-4 bg-gray-900/50 border border-gray-800 rounded-lg">
+          <div className="mt-4 p-4 bg-black border border-gray-800 rounded-lg">
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm text-gray-400">Debug Information</span>
               <button 
