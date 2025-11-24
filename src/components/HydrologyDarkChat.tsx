@@ -257,7 +257,7 @@ export default function HydrologyDarkChat() {
       }
 
       if (!cleanContent || cleanContent.trim() === '') {
-        cleanContent = 'Analysis completed successfully.'
+        cleanContent = ''
       }
 
       console.log('=== PROCESSING RESPONSE ===')
@@ -270,9 +270,6 @@ export default function HydrologyDarkChat() {
       const hasStaticUrl = !!(r?.static_url)
       const hasOverlayUrl = !!(r?.overlay_url)
       let hasGeoJsonData = !!(r?.geojson?.features?.length > 0)
-
-      let imageUrl = null
-      let mapData: MapData | undefined
 
       if (hasGeoJsonData) {
         console.log('🔍 Processing GeoJSON data...')
@@ -311,8 +308,34 @@ export default function HydrologyDarkChat() {
 
       const variable = r?.variable || 'temperature'
 
-      if (hasStaticUrl || hasOverlayUrl || hasGeoJsonData || hasGeoTiffUrl) {
-        console.log('✅ Building mapData from backend artifacts')
+      // ✅ Detect if this is a simple visualization (comparison/subplot)
+      const isSimpleVisualization = (
+        r?.type === "simple_visualization" || 
+        r?.metadata?.computation_type === "comparison" ||
+        r?.use_tiles === false ||
+        (!r?.bounds && !r?.map_config && hasStaticUrl)
+      )
+
+      console.log('🔍 Visualization type check:', {
+        type: r?.type,
+        computation_type: r?.metadata?.computation_type,
+        use_tiles: r?.use_tiles,
+        has_bounds: !!r?.bounds,
+        has_map_config: !!r?.map_config,
+        isSimpleVisualization: isSimpleVisualization
+      })
+
+      let imageUrl = null
+      let mapData: MapData | undefined
+
+      // ✅ CASE 1: Simple visualization (comparison/subplot) - STATIC IMAGE ONLY
+      if (isSimpleVisualization && hasStaticUrl) {
+        console.log('📊 Simple visualization detected - using static image only')
+        imageUrl = r.static_url
+      }
+      // ✅ CASE 2: Interactive map - BUILD MAP DATA
+      else if ((hasStaticUrl || hasOverlayUrl || hasGeoJsonData || hasGeoTiffUrl) && !isSimpleVisualization) {
+        console.log('✅ Building interactive mapData for Azure Map')
         
         let mapBounds = null
         let mapCenter = r.map_config?.center
@@ -355,16 +378,16 @@ export default function HydrologyDarkChat() {
           ]
         }
         
-        const latPadding = mapBounds ? Math.abs(mapBounds.north - mapBounds.south) * 0.1 : 1
-        const lngPadding = mapBounds ? Math.abs(mapBounds.east - mapBounds.west) * 0.1 : 1
-        
+        const latPadding = mapBounds ? Math.abs(mapBounds.north - mapBounds.south) * 0.02 : 0.5
+        const lngPadding = mapBounds ? Math.abs(mapBounds.east - mapBounds.west) * 0.02 : 0.5
+
         const paddedBounds = mapBounds ? {
           north: mapBounds.north + latPadding, 
           south: mapBounds.south - latPadding,
           east: mapBounds.east + lngPadding, 
           west: mapBounds.west - lngPadding
         } : getMapBounds(currentQuery)
-        
+
         const center = mapCenter ? { 
           lat: mapCenter[1], 
           lng: mapCenter[0] 
@@ -377,7 +400,7 @@ export default function HydrologyDarkChat() {
           map_url: r.overlay_url || r.static_url || '',
           bounds: paddedBounds,
           center: center,
-          zoom: r.map_config?.zoom || 7,
+          zoom: r.map_config?.zoom || 9,
           azureData: {
             static_url: r.static_url,
             overlay_url: r.overlay_url,
@@ -387,7 +410,7 @@ export default function HydrologyDarkChat() {
             bounds: mapBounds,
             map_config: r.map_config,
             use_tiles: r.use_tiles,
-            tile_config: r.tile_config,
+            tile_config: r.tile_config,  // ✅ This contains color_scale.colors from backend
             variable_info: {
               name: variable,
               unit: getVariableUnit(variable),
@@ -399,7 +422,9 @@ export default function HydrologyDarkChat() {
         }
         
         imageUrl = r.static_url
-      } else {
+      } 
+      // ✅ CASE 3: No map artifacts found
+      else {
         console.log('❌ No map artifacts found')
         imageUrl = r?.content?.match(/https?:\/\/[^\s]+/)?.[0] || null
       }
@@ -438,8 +463,7 @@ export default function HydrologyDarkChat() {
       background: '#000000'
     }}>
       {/* Header with integrated logos */}
-      <div className="relative w-full overflow-hidden" style={{ height: '320px', background: '#000000' }}>
-        {/* Image with logos fills entire width */}
+      <div className="relative w-full overflow-hidden" style={{ height: '220px', background: '#000000' }}>
         <div className="absolute inset-0 z-0" style={{ background: '#000000' }}>
           <img 
             src="/total.svg" 
@@ -447,7 +471,6 @@ export default function HydrologyDarkChat() {
             className="w-full h-full object-cover object-left"
             style={{
               animation: 'float 6s ease-in-out infinite',
-              transform: 'scale(1.1)',
               background: '#000000'
             }}
             onError={(e) => {
@@ -460,58 +483,79 @@ export default function HydrologyDarkChat() {
           />
         </div>
         
-        {/* Title OVERLAID on top-right of image */}
-        <div className="absolute bottom-0 right-0 pr-16 pb-18 z-50">
+        <div className="absolute bottom-0 right-0 pr-16 -mb-1 z-50">
           <div className="text-right">
-            <h1 className="text-5xl md:text-6xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent mb-2" style={{
-              filter: 'drop-shadow(0 0 20px rgba(0, 0, 0, 1)) drop-shadow(0 0 40px rgba(0, 0, 0, 0.8))'
-            }}>
-              Hydrology Copilot
+            <h1 className="text-5xl md:text-6xl font-bold mb-2">
+              <span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent block" style={{
+                filter: 'drop-shadow(0 0 20px rgba(0, 0, 0, 1)) drop-shadow(0 0 40px rgba(0, 0, 0, 0.8))'
+              }}>
+                Hydrology Copilot
+              </span>
+              <span className="text-white text-base font-medium block mt-1" style={{
+                textShadow: '0 0 10px rgba(0, 0, 0, 1), 0 0 20px rgba(0, 0, 0, 0.8), 2px 2px 4px rgba(0, 0, 0, 1)'
+              }}>
+                An AI tool for unlocking hydrological insights
+              </span>
             </h1>
-            <p className="text-gray-200 text-base font-medium" style={{
-              textShadow: '0 0 10px rgba(0, 0, 0, 1), 0 0 20px rgba(0, 0, 0, 0.8), 2px 2px 4px rgba(0, 0, 0, 1)'
-            }}>
-              Hydrological Data Analysis
-            </p>
           </div>
         </div>
       </div>
 
       {/* Main chat container */}
-      <div className="flex-1 flex flex-col max-w-6xl mx-auto w-full px-4 pb-4">
-        {/* Messages area */}
-        <div className="flex-1 overflow-y-auto py-6 space-y-4" style={{ maxHeight: 'calc(100vh - 470px)' }}>
-          {messages.length === 0 && (
-            <div className="text-center py-12">
-              <p className="text-gray-400 text-lg mb-2">Ask a question to get started</p>
-              <p className="text-gray-600 text-sm">
-                Try: "Show temperature in Michigan" or "Analyze drought conditions in California"
-              </p>
-            </div>
-          )}
+      <div className="flex-1 flex flex-col mx-auto w-full px-4">
+        <div 
+          className="flex-1 overflow-y-auto py-6 mb-32" 
+          style={{ 
+            minHeight: '350px',
+            maxHeight: 'calc(100vh - 350px)' 
+          }}
+        >
+          <div className="max-w-3xl mx-auto space-y-4">
+            {messages.length === 0 && (
+              <div className="text-center py-12">
+                <p className="text-gray-400 text-lg mb-2">Ask a question to get started</p>
+                <p className="text-gray-600 text-sm">
+                  Try: "Show temperature in Michigan" or "Analyze drought conditions in California"
+                </p>
+              </div>
+            )}
 
-          {messages.map((m) => (
-            <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[80%] ${
-                m.role === 'user' 
-                  ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl rounded-tr-sm' 
-                  : 'bg-black border border-gray-800 text-gray-100 rounded-2xl rounded-tl-sm'
-              } px-5 py-3`}>
-                {m.text && <div className="whitespace-pre-wrap">{m.text}</div>}
+            {messages.map((m) => (
+              <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                {/* Text message bubble */}
+                {m.text && !m.mapData && !m.imageUrl && (
+                  <div className={`max-w-[85%] ${
+                    m.role === 'user' 
+                      ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl rounded-tr-sm' 
+                      : 'bg-black border border-gray-800 text-gray-100 rounded-2xl rounded-tl-sm'
+                  } px-5 py-3`}>
+                    <div className="whitespace-pre-wrap">{m.text}</div>
+                  </div>
+                )}
                 
-                {/* Side-by-side maps layout */}
-                {(m.mapData || m.imageUrl) && (
-                  <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {/* Azure Interactive Map */}
+                {/* Message with map - full width */}
+                {m.mapData && (
+                  <div className="w-full">
+                    {m.text && (
+                      <div className={`max-w-[85%] mb-4 ${
+                        m.role === 'user' 
+                          ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl rounded-tr-sm ml-auto' 
+                          : 'bg-black border border-gray-800 text-gray-100 rounded-2xl rounded-tl-sm'
+                      } px-5 py-3`}>
+                        <div className="whitespace-pre-wrap">{m.text}</div>
+                      </div>
+                    )}
+                    
+                    {/* ✅ Map renders here - with colorbar integration */}
                     {m.mapData && AZURE_MAPS_KEY && (
-                      <div>
+                      <div className="bg-black border border-gray-800 rounded-2xl rounded-tl-sm px-5 py-3">
                         <div className="text-sm font-semibold text-gray-300 mb-2">🗺️ Interactive Map:</div>
                         <div className="rounded-lg overflow-hidden border border-gray-700">
                           <AzureMapView 
                             mapData={m.mapData} 
                             subscriptionKey={AZURE_MAPS_KEY}
                             clientId={AZURE_MAPS_CLIENT_ID}
-                            height="450px"
+                            height="400px"
                           />
                         </div>
                         <p className="text-xs text-gray-400 mt-2">
@@ -519,158 +563,123 @@ export default function HydrologyDarkChat() {
                         </p>
                       </div>
                     )}
-
-                    {/* Static PNG with Legend */}
-                    {(m.mapData?.azureData?.static_url || m.imageUrl) && (
-                      <div>
-                        <div className="mb-2">
-                          <span className="text-sm font-semibold text-gray-300">📊 Static Map with Legend:</span>
-                        </div>
-                        <div className="border border-gray-700 rounded-lg overflow-hidden bg-black" style={{ height: '450px' }}>
-                          <TransformWrapper
-                            initialScale={1}
-                            minScale={0.5}
-                            maxScale={4}
-                            centerOnInit={true}
-                            wheel={{ step: 0.1 }}
-                            pinch={{ step: 5 }}
-                            doubleClick={{ mode: 'toggle', step: 0.7 }}
-                          >
-                            {({ zoomIn, zoomOut, resetTransform }) => (
-                              <>
-                                <div className="absolute top-2 left-2 z-10 flex gap-1">
-                                  <button onClick={() => zoomIn()} className="bg-black hover:bg-gray-900 text-white border border-gray-600 rounded px-2 py-1 text-sm">+</button>
-                                  <button onClick={() => zoomOut()} className="bg-black hover:bg-gray-900 text-white border border-gray-600 rounded px-2 py-1 text-sm">−</button>
-                                  <button onClick={() => resetTransform()} className="bg-black hover:bg-gray-900 text-white border border-gray-600 rounded px-2 py-1 text-sm">⌂</button>
-                                </div>
-                                <TransformComponent 
-                                  wrapperStyle={{ width: '100%', height: '100%', background: '#000000' }} 
-                                  contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000000' }}
-                                >
-                                  <img 
-                                    src={m.mapData?.azureData?.static_url || m.imageUrl || ''} 
-                                    alt="Static map with legend" 
-                                    style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', background: '#000000' }} 
-                                    draggable={false} 
-                                  />
-                                </TransformComponent>
-                              </>
-                            )}
-                          </TransformWrapper>
-                        </div>
-                        <div className="mt-2 flex items-center justify-between">
-                          <span className="text-xs text-gray-500">
-                            💡 Scroll to zoom, drag to pan
-                          </span>
-                          <a 
-                            href={m.mapData?.azureData?.static_url || m.imageUrl || '#'} 
-                            download="static-map.png"
-                            className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                            </svg>
-                            Download
-                          </a>
-                        </div>
-                      </div>
-                    )}
+                  </div>
+                )}
+                
+                {/* Image only message */}
+                {m.imageUrl && !m.mapData && (
+                  <div className={`max-w-[85%] ${
+                    m.role === 'user' 
+                      ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl rounded-tr-sm' 
+                      : 'bg-black border border-gray-800 text-gray-100 rounded-2xl rounded-tl-sm'
+                  } px-5 py-3`}>
+                    {m.text && <div className="whitespace-pre-wrap mb-4">{m.text}</div>}
+                    <img src={m.imageUrl} alt="Result" className="rounded-lg w-full" />
                   </div>
                 )}
               </div>
-            </div>
-          ))}
-          
-          {/* Loading indicator */}
-          {loading && (
-            <div className="flex justify-start">
-              <div className="bg-black border border-gray-800 rounded-2xl rounded-tl-sm px-5 py-3">
-                <div className="flex items-center space-x-3">
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-purple-500"></div>
-                  <span className="text-gray-300">Processing your request...</span>
+            ))}
+            
+            {loading && (
+              <div className="flex justify-start">
+                <div className="bg-black border border-gray-800 rounded-2xl rounded-tl-sm px-5 py-3">
+                  <div className="flex items-center space-x-3">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-purple-500"></div>
+                    <span className="text-gray-300">Processing your request...</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-          
-          <div ref={endRef} />
+            )}
+            
+            <div ref={endRef} />
+          </div>
         </div>
 
-        {/* Control buttons at bottom-left, above input */}
-        <div className="flex items-center gap-3 mb-3">
-          {userId && (
-            <div className="text-xs text-gray-500 px-3 py-1.5 bg-black border border-gray-800 rounded-lg">
-              User: {userId.substring(0, 8)}
-              {messages.length > 0 && <span className="text-green-400 ml-2">● Active</span>}
-            </div>
-          )}
-          
-          <button
-            onClick={handleNewConversation}
-            className="px-3 py-1.5 text-xs bg-black hover:bg-black text-gray-300 border border-gray-800 rounded-lg transition-all duration-200 hover:border-gray-700"
-            title="Start fresh conversation"
-          >
-            📝 New Chat
-          </button>
-          
-          <button
-            onClick={forceDebugLog}
-            className="px-3 py-1.5 text-xs bg-black hover:bg-black text-red-400 border border-gray-800 rounded-lg transition-all duration-200 hover:border-red-900"
-            title="Toggle debug mode"
-          >
-            🔥 Debug
-          </button>
-        </div>
-
-        {/* Input form at bottom */}
-        <form onSubmit={handleSubmit} className="border-t border-gray-800 pt-4">
-          <div className="flex gap-3">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Ask about hydrology data..."
-              className="flex-1 px-5 py-3 bg-black border border-gray-800 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all duration-200"
-              disabled={loading}
-            />
+        {/* Control buttons */}
+        <div className="fixed bottom-24 left-0 right-0 z-40">
+          <div className="max-w-5xl mx-auto px-4 flex items-center gap-3">
+            {userId && (
+              <div className="text-xs text-gray-500 px-3 py-1.5 bg-black border border-gray-800 rounded-lg">
+                User: {userId.substring(0, 8)}
+                {messages.length > 0 && <span className="text-green-400 ml-2">● Active</span>}
+              </div>
+            )}
+            
             <button
-              type="submit"
-              disabled={loading || !query.trim()}
-              className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-medium hover:from-blue-500 hover:to-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 min-w-[100px]"
+              onClick={handleNewConversation}
+              className="px-3 py-1.5 text-xs bg-black hover:bg-black text-gray-300 border border-gray-800 rounded-lg transition-all duration-200 hover:border-gray-700"
+              title="Start fresh conversation"
             >
-              {loading ? (
-                <span className="flex items-center justify-center">
-                  <svg className="animate-spin h-4 w-4 mr-2" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  Processing
-                </span>
-              ) : 'Send'}
+              📝 New Chat
+            </button>
+            
+            <button
+              onClick={forceDebugLog}
+              className="px-3 py-1.5 text-xs bg-black hover:bg-black text-red-400 border border-gray-800 rounded-lg transition-all duration-200 hover:border-red-900"
+              title="Toggle debug mode"
+            >
+              🔥 Debug
             </button>
           </div>
-          {error && (
-            <div className="mt-3 text-sm text-red-400 bg-black border border-red-800 rounded-lg px-4 py-2">
-              {error}
-            </div>
-          )}
-        </form>
+        </div>
+
+        {/* Input form */}
+        <div className="fixed bottom-0 left-0 right-0 bg-black z-40">
+          <div className="max-w-5xl mx-auto border-t border-gray-800 pt-4 pb-4 px-4">
+            <form onSubmit={handleSubmit}>
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Ask about hydrology data..."
+                  className="flex-1 px-5 py-3 bg-black border border-gray-800 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all duration-200"
+                  disabled={loading}
+                />
+                <button
+                  type="submit"
+                  disabled={loading || !query.trim()}
+                  className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-medium hover:from-blue-500 hover:to-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 min-w-[100px]"
+                >
+                  {loading ? (
+                    <span className="flex items-center justify-center">
+                      <svg className="animate-spin h-4 w-4 mr-2" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Processing
+                    </span>
+                  ) : 'Send'}
+                </button>
+              </div>
+              {error && (
+                <div className="mt-3 text-sm text-red-400 bg-black border border-red-800 rounded-lg px-4 py-2">
+                  {error}
+                </div>
+              )}
+            </form>
+          </div>
+        </div>
 
         {/* Debug panel */}
         {showDebug && debug && (
-          <div className="mt-4 p-4 bg-black border border-gray-800 rounded-lg">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-sm text-gray-400">Debug Information</span>
-              <button 
-                onClick={() => setShowDebug(false)}
-                className="text-gray-500 hover:text-gray-300"
-              >
-                ✕
-              </button>
+          <div className="fixed bottom-28 left-0 right-0 z-50">
+            <div className="max-w-5xl mx-auto px-4">
+              <div className="p-4 bg-black border border-gray-800 rounded-lg">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm text-gray-400">Debug Information</span>
+                  <button 
+                    onClick={() => setShowDebug(false)}
+                    className="text-gray-500 hover:text-gray-300"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <pre className="text-xs text-gray-300 overflow-auto max-h-48">
+                  {JSON.stringify(debug, null, 2)}
+                </pre>
+              </div>
             </div>
-            <pre className="text-xs text-gray-300 overflow-auto max-h-48">
-              {JSON.stringify(debug, null, 2)}
-            </pre>
           </div>
         )}
       </div>

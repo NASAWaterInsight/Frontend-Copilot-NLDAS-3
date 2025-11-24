@@ -1,10 +1,10 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import * as atlas from 'azure-maps-control'
 import 'azure-maps-control/dist/atlas.min.css'
 import { loadGeoTiffOverlay, createDynamicLegend } from '../utils/geotiffLoader'
+import ColorbarLegend from './ColorbarLegend'
 
-// ✅ NEW: Optional tile bounds helper (install: npm i @mapbox/tilebounds)
-// Guard import so app doesn’t crash if lib not installed yet.
+// ✅ Optional tile bounds helper
 let tilebounds: any = null
 try {
   // @ts-ignore
@@ -37,6 +37,21 @@ interface AzureMapViewProps {
 export default function AzureMapView({ mapData, subscriptionKey, clientId, height = '400px' }: AzureMapViewProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<atlas.Map | null>(null)
+  const [mapError, setMapError] = useState<string | null>(null)
+
+  // ✅ CRITICAL FIX: Early validation check
+  // Don't render component at all if we don't have real map data
+  const hasRealMapData = (
+    mapData?.azureData &&
+    (mapData.azureData.use_tiles === true || 
+     mapData.azureData.overlay_url || 
+     mapData.azureData.static_url)
+  )
+
+  if (!hasRealMapData) {
+    console.log('🚫 AzureMapView: No real map data, not rendering')
+    return null
+  }
 
   useEffect(() => {
     if (!mapRef.current || !subscriptionKey) return
@@ -79,7 +94,6 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
         console.log('azureData keys:', mapData.azureData ? Object.keys(mapData.azureData) : 'NONE')
         console.log('azureData full object:', mapData.azureData)
 
-        // ✅ FIXED: Check for tile-based rendering first with proper detection
         const useTiles = mapData.azureData?.use_tiles === true
         const tileConfig = mapData.azureData?.tile_config
         const overlayUrl = mapData.azureData?.overlay_url
@@ -100,9 +114,18 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           responseKeys: mapData.azureData ? Object.keys(mapData.azureData) : []
         })
 
-        // ✅ NEW: BEGIN TILE DEBUG HELPERS =============================
+        if (tileConfig?.color_scale) {
+          console.log('🎨 Colorbar data available:', {
+            vmin: tileConfig.color_scale.vmin,
+            vmax: tileConfig.color_scale.vmax,
+            cmap: tileConfig.color_scale.cmap,
+            variable: tileConfig.color_scale.variable,
+            unit: tileConfig.color_scale.unit,
+            colors_count: tileConfig.color_scale.colors?.length || 0,
+            has_backend_colors: !!tileConfig.color_scale.colors
+          })
+        }
 
-        // Original requested bounds (backend or fallback)
         const requestedBounds = mapData.azureData?.bounds || mapData.bounds || bounds
 
         function debugTileMath(tileConfig?: any) {
@@ -140,7 +163,6 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
             console.log(`🔬 Corner ${c.name}: lon=${c.lon}, lat=${c.lat}, z=${zTest} | x=${x}, y(log/sec)=${y1}, y(asinh)=${y2}, yFlip(log/sec)=${yFlip1}, yFlip(asinh)=${yFlip2}`)
           })
 
-          // Test live fetch for normal vs flipped y
           const testX = xLon(requestedBounds.west, zTest)
           const testYLog = yLogSec(requestedBounds.north, zTest)
           const flippedY = (Math.pow(2, zTest) - 1) - testYLog
@@ -209,7 +231,6 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           })
         }
 
-        // ===== NEW: HANDLE WEATHER RESPONSE STYLE (ABSTRACTED) =====
         function handleWeatherResponse(response: any) {
           console.log('🧩 handleWeatherResponse invoked')
           if (response.use_tiles && response.tile_config) {
@@ -217,21 +238,18 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
             renderWithTiles(response.tile_config, response)
           } else if (response.overlay_url && response.bounds) {
             console.log('📸 Using PNG overlay for small area')
-            // Already handled by addPngOverlay fallback
           }
           if (response.static_url) {
             console.log('💾 Static URL available for download:', response.static_url)
           }
         }
 
-        // ===== TILE RENDERING (ABRIDGED) =====
         function renderWithTiles(tileConfig: any, response: any) {
           console.log('🔧 renderWithTiles start')
           if (!tileConfig?.tile_url) {
             console.warn('⚠️ Missing tile_url in tileConfig')
             return
           }
-          // Try native TileLayer first
           if ((atlas as any).source?.TileSource && (atlas as any).layer?.TileLayer) {
             try {
               const source = new (atlas as any).source.TileSource('weather-tiles', {
@@ -254,13 +272,11 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
               console.warn('⚠️ Native TileLayer failed, falling back:', (e as any)?.message)
             }
           }
-          // Fallback manual approach (already implemented -> addTileGrid)
           console.log('🔁 Falling back to manual ImageLayer grid')
           debugTileMath(tileConfig)
           addBoundsDiagnosticRect()
         }
 
-        // ✅ NEW: addTileLayer (was referenced but missing) 
         function addTileLayer(tileConfig: any) {
           console.log('🛠 addTileLayer invoked')
           if (!tileConfig?.tile_url) {
@@ -269,12 +285,10 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           }
         }
 
-        // ✅ NEW: Load only backend-specified tiles
         function loadBackendTiles(tileList: any[]) {
           console.log('🎯 ===== LOADING BACKEND-SPECIFIED TILES ONLY =====')
           console.log('Tiles to load:', tileList)
 
-          // ✅ Clear existing tiles first
           clearExistingWeatherTiles()
 
           if (!Array.isArray(tileList) || tileList.length === 0) {
@@ -296,10 +310,10 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
 
             try {
               const coordinates: [number, number][] = [
-                [tile.bounds.west, tile.bounds.north],   // Top-left
-                [tile.bounds.east, tile.bounds.north],   // Top-right
-                [tile.bounds.east, tile.bounds.south],   // Bottom-right
-                [tile.bounds.west, tile.bounds.south]    // Bottom-left
+                [tile.bounds.west, tile.bounds.north],
+                [tile.bounds.east, tile.bounds.north],
+                [tile.bounds.east, tile.bounds.south],
+                [tile.bounds.west, tile.bounds.south]
               ]
 
               const imageLayer = new atlas.layer.ImageLayer({
@@ -322,7 +336,6 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           console.log(`🎯 Backend tiles complete: ${successCount} success, ${errorCount} errors`)
         }
 
-        // ✅ NEW: Clear existing weather tiles
         function clearExistingWeatherTiles() {
           try {
             const layers = map.layers.getLayers()
@@ -339,7 +352,6 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           }
         }
 
-        // ===== ADVANCED: CALCULATE VISIBLE TILES WITH tilebounds =====
         function calculateTilesInView(currentZoom?: number) {
           if (!tilebounds || !tileConfig?.tile_url) {
             console.log('⚠️ tilebounds or tileConfig missing - skip live tile calc')
@@ -347,7 +359,7 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           }
           const cam = map.getCamera()
           const zoom = currentZoom ?? Math.floor(cam.zoom || 6)
-          const b = cam.bounds // [west,south,east,north]
+          const b = cam.bounds
           if (!b || b.length !== 4) {
             console.log('⚠️ Camera bounds unavailable for tile calc')
             return
@@ -363,7 +375,7 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           const results: any[] = []
           for (let x = tiles.minX; x <= tiles.maxX; x++) {
             for (let y = tiles.minY; y <= tiles.maxY; y++) {
-              const tb = tilebounds.tile2bbox(x, y, clampedZoom) // [w,s,e,n]
+              const tb = tilebounds.tile2bbox(x, y, clampedZoom)
               results.push({
                 x, y, z: clampedZoom,
                 bounds: { west: tb[0], south: tb[1], east: tb[2], north: tb[3] }
@@ -372,7 +384,6 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           }
           console.log(`🔍 Visible tiles (tilebounds) z=${clampedZoom}: count=${results.length}`)
           summarizeTiles(results)
-          // Test one tile fetch
           if (results[0]) {
             const testUrl = tileConfig.tile_url
               .replace('{z}', clampedZoom.toString())
@@ -384,7 +395,6 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           }
         }
 
-        // Expose debug globally
         ;(window as any).__azureTileDebug = {
           requestedBounds,
           tileConfig,
@@ -393,19 +403,12 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
         }
         console.log('🧪 Global debug object available at window.__azureTileDebug')
 
-      
-
-        // Invoke handleWeatherResponse for unified flow
         handleWeatherResponse(mapData.azureData || {})
 
-        // ===== END TILE DEBUG HELPERS =============================
-
-        // ✅ PRIORITY 1: Use tile-based rendering if available
         if (useTiles && tileConfig && tileConfig.tile_url) {
           console.log('🗺️ ====== USING TILE-BASED RENDERING ======')
           console.log('Tile URL template:', tileConfig.tile_url)
 
-          // ✅ COMPREHENSIVE BACKEND DATA DEBUG
           console.log('🔍 ===== COMPREHENSIVE BACKEND DATA DEBUG =====')
           console.log('🔍 Full tileConfig object:', JSON.stringify(tileConfig, null, 2))
           console.log('🔍 Backend tile_list exists:', !!tileConfig.tile_list)
@@ -437,7 +440,6 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
             first_tile: tileConfig.tile_list?.[0]
           })
           
-          // ✅ Check if backend provided specific tile list
           if (tileConfig.tile_list && Array.isArray(tileConfig.tile_list)) {
             console.log(`🎯 ===== USING BACKEND TILE LIST =====`)
             console.log(`🎯 Loading ${tileConfig.tile_list.length} specific tiles from backend`)
@@ -451,7 +453,6 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
             addTileLayer(tileConfig)
           }
 
-          // Add hover interactions for GeoJSON data
           if (hasGeoJsonData) {
             console.log('🎯 Adding hover interactions for tile + GeoJSON')
             const variable = tileConfig.variable || 'temperature'
@@ -468,7 +469,6 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
             processTemperatureData(temperatureData, variable, unit)
           }
         }
-        // ✅ PRIORITY 2: Fall back to PNG overlay ONLY if not using tiles
         else if ((overlayUrl || staticUrl) && hasBounds) {
           console.log('📸 ====== FALLING BACK TO PNG OVERLAY ======')
           console.log('Reason: useTiles =', useTiles, ', tileConfig =', !!tileConfig)
@@ -500,7 +500,6 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           })
         }
 
-        // ====== MISSING: ADD PNG OVERLAY FUNCTION ======
         function addPngOverlay() {
           console.log('📸 ====== PNG OVERLAY FUNCTION ======')
           
@@ -511,7 +510,6 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           console.log('  - overlay_url:', overlayUrl)
           console.log('  - static_url:', staticUrl)
           
-          // Use overlay_url if available, fallback to static_url
           const imageUrl = overlayUrl || staticUrl
           
           if (!imageUrl || !imageUrl.startsWith('http')) {
@@ -521,7 +519,6 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           
           console.log('📸 Using URL:', imageUrl.substring(0, 80) + '...')
           
-          // Get bounds - prioritize backend bounds
           let overlayBounds
           if (mapData.azureData?.bounds) {
             overlayBounds = mapData.azureData.bounds
@@ -534,7 +531,6 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
             console.log('⚠️ Using default bounds:', overlayBounds)
           }
           
-          // Validate bounds
           if (!overlayBounds || 
               !isFinite(overlayBounds.north) || 
               !isFinite(overlayBounds.south) ||
@@ -544,7 +540,6 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
             return
           }
           
-          // Verify bounds order
           if (overlayBounds.north <= overlayBounds.south) {
             console.error('❌ North must be > South:', {
               north: overlayBounds.north,
@@ -563,12 +558,11 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           
           console.log('✅ Bounds validated:', overlayBounds)
           
-          // Create coordinates for Azure Maps ImageLayer
           const coordinates: [number, number][] = [
-            [overlayBounds.west, overlayBounds.north],   // Top-left (NW)
-            [overlayBounds.east, overlayBounds.north],   // Top-right (NE)
-            [overlayBounds.east, overlayBounds.south],   // Bottom-right (SE)
-            [overlayBounds.west, overlayBounds.south]    // Bottom-left (SW)
+            [overlayBounds.west, overlayBounds.north],
+            [overlayBounds.east, overlayBounds.north],
+            [overlayBounds.east, overlayBounds.south],
+            [overlayBounds.west, overlayBounds.south]
           ]
           
           console.log('📍 PNG overlay coordinates:')
@@ -577,11 +571,9 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           console.log('  SE:', coordinates[2])
           console.log('  SW:', coordinates[3])
           
-          // Determine opacity based on URL type
           const isTransparentOverlay = overlayUrl || imageUrl.includes('overlay') || imageUrl.includes('transparent')
           const opacity = isTransparentOverlay ? 0.8 : 0.6
           
-          // Create ImageLayer
           const imageLayer = new atlas.layer.ImageLayer({
             url: imageUrl,
             coordinates: coordinates,
@@ -591,12 +583,10 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           
           console.log(`✅ PNG ImageLayer created with opacity: ${opacity}`)
           
-          // Add to map
           try {
             map.layers.add(imageLayer, 'labels')
             console.log('✅ PNG overlay added below labels')
             
-            // Zoom to overlay bounds
             map.setCamera({
               bounds: [overlayBounds.west, overlayBounds.south, overlayBounds.east, overlayBounds.north],
               padding: 40
@@ -614,11 +604,9 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           }
         }
 
-        // ====== ENHANCED HOVER INTERACTIONS ======
         function processTemperatureData(temperatureData: any[], variable: string, unit: string) {
           console.log('🎯 Processing hover interactions for', temperatureData.length, 'data points')
           
-          // ✅ FIXED: Better data validation
           const validData = temperatureData.filter((point: any) => {
             const lat = point.latitude
             const lng = point.longitude  
@@ -654,10 +642,8 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
             return
           }
           
-          // Calculate adaptive radius for hover detection
-          let avgDistance = 0.1 // Default
+          let avgDistance = 0.1
           if (validData.length > 1) {
-            // Sample a few points to calculate average distance
             const sampleSize = Math.min(10, validData.length - 1)
             let totalDistance = 0
             
@@ -684,7 +670,6 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           
           let hoverTimeout: NodeJS.Timeout | null = null
           
-          // Add mousemove event with improved detection
           map.events.add('mousemove', (e: any) => {
             if (hoverTimeout) {
               clearTimeout(hoverTimeout)
@@ -736,7 +721,7 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
               } else {
                 popup.close()
               }
-            }, 100) // Increased debounce to reduce errors
+            }, 100)
           })
           
           map.events.add('mouseleave', () => {
@@ -763,11 +748,15 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
 
       }, 1500)
 
-      // Set initial camera
       map.setCamera({
         bounds: [bounds.west, bounds.south, bounds.east, bounds.north],
         padding: 40
       })
+    })
+
+    map.events.add('error', (error: any) => {
+      console.error('❌ Azure Map error:', error)
+      setMapError('Map failed to load')
     })
 
     return () => {
@@ -778,11 +767,66 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
     }
   }, [mapData, subscriptionKey, clientId])
 
+  // ✅ STRICT COLORBAR VALIDATION
+  const hasValidColorScale = (
+    mapData?.azureData?.tile_config?.color_scale &&
+    typeof mapData.azureData.tile_config.color_scale.vmin === 'number' &&
+    typeof mapData.azureData.tile_config.color_scale.vmax === 'number' &&
+    !isNaN(mapData.azureData.tile_config.color_scale.vmin) &&
+    !isNaN(mapData.azureData.tile_config.color_scale.vmax) &&
+    isFinite(mapData.azureData.tile_config.color_scale.vmin) &&
+    isFinite(mapData.azureData.tile_config.color_scale.vmax) &&
+    mapData.azureData.tile_config.color_scale.vmax > mapData.azureData.tile_config.color_scale.vmin
+  )
+
+  const showColorbar = (
+    hasValidColorScale &&
+    mapData?.azureData?.use_tiles === true &&
+    typeof mapData?.azureData?.tile_config?.tile_url === 'string' &&
+    mapData.azureData.tile_config.tile_url.length > 10
+  )
+
+  console.log('🎨 Colorbar decision:', {
+    hasValidColorScale,
+    use_tiles: mapData?.azureData?.use_tiles,
+    has_tile_url: !!mapData?.azureData?.tile_config?.tile_url,
+    SHOW_COLORBAR: showColorbar
+  })
+
+  if (mapError) {
+    return (
+      <div className="flex items-center justify-center bg-gray-900 text-red-400" style={{ height }}>
+        <div className="text-center">
+          <div className="text-2xl mb-2">⚠️</div>
+          <div>{mapError}</div>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div 
-      ref={mapRef} 
-      style={{ height, width: '100%' }}
-      className="rounded-md border"
-    />
+    <div className="flex w-full" style={{ height }}>
+      <div 
+        ref={mapRef} 
+        className="rounded-md border"
+        style={{ 
+          height,
+          width: showColorbar ? 'calc(100% - 140px)' : '100%'
+        }}
+      />
+      
+      {showColorbar && hasValidColorScale && (
+        <div style={{ width: '140px', height }}>
+          <ColorbarLegend
+            vmin={mapData.azureData.tile_config.color_scale.vmin}
+            vmax={mapData.azureData.tile_config.color_scale.vmax}
+            cmap={mapData.azureData.tile_config.color_scale.cmap || 'viridis'}
+            variable={mapData.azureData.tile_config.color_scale.variable || 'value'}
+            unit={mapData.azureData.tile_config.color_scale.unit || ''}
+            colors={mapData.azureData.tile_config.color_scale.colors}
+          />
+        </div>
+      )}
+    </div>
   )
 }
