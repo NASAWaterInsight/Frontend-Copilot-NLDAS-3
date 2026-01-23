@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview --port 5173"
   },
   "dependencies": {
     "azure-maps-control": "^3.6.1",
@@ -20,9 +20,10 @@
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.0.0",
     "autoprefixer": "^10.4.14",
+    "baseline-browser-mapping": "^2.9.17",
     "postcss": "^8.4.23",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.0.0",
-    "vite": "^7.2.2"
+    "vite": "^5.0.0"
   }
 }

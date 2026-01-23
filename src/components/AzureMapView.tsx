@@ -40,7 +40,6 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
   const [mapError, setMapError] = useState<string | null>(null)
 
   // ✅ CRITICAL FIX: Early validation check
-  // Don't render component at all if we don't have real map data
   const hasRealMapData = (
     mapData?.azureData &&
     (mapData.azureData.use_tiles === true || 
@@ -48,8 +47,15 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
      mapData.azureData.static_url)
   )
 
-  if (!hasRealMapData) {
-    console.log('🚫 AzureMapView: No real map data, not rendering')
+  // ✅ NEW: Skip map entirely if static/overlay is a GIF
+  const isGif = (
+    typeof mapData?.azureData?.static_url === 'string' && mapData.azureData.static_url.toLowerCase().endsWith('.gif')
+  ) || (
+    typeof mapData?.azureData?.overlay_url === 'string' && mapData.azureData.overlay_url.toLowerCase().endsWith('.gif')
+  )
+
+  if (!hasRealMapData || isGif) {
+    console.log('🚫 AzureMapView: Skipping map rendering (no map data or GIF)')
     return null
   }
 
