@@ -183,73 +183,94 @@ export default function HydrologyDarkChat() {
     return { imageUrl: null, cleanText: text }
   }
 
-  // ✅ NEW: Process response (extracted for reuse)
-  // ✅ NEW: Format data result object into readable text
-function formatDataResult(result: any): string {
-  console.log('📊 Formatting data result:', result)
-  
-  if (result.average_temperature !== undefined) {
-    return `The average temperature in ${result.region || 'the selected area'} on ${result.date || 'the selected date'} was ${result.average_temperature}${result.unit || '°C'}.`
+  // ✅ NEW: Helper function to check if URL is a GIF (handles query parameters)
+  function isGifUrl(url: string | undefined): boolean {
+    if (!url || typeof url !== 'string') return false
+    const urlWithoutParams = url.split('?')[0]  // Strip query params
+    return urlWithoutParams.toLowerCase().endsWith('.gif')
   }
-  if (result.total_precipitation !== undefined) {
-    return `The total precipitation in ${result.region || 'the selected area'} on ${result.date || 'the selected date'} was ${result.total_precipitation} ${result.unit || 'mm'}.`
-  }
-  if (result.average_precipitation !== undefined) {
-    return `The average precipitation in ${result.region || 'the selected area'} on ${result.date || 'the selected date'} was ${result.average_precipitation} ${result.unit || 'mm'}.`
-  }
-  if (result.spi !== undefined || result.spi_value !== undefined) {
-    const spiValue = result.spi ?? result.spi_value
-    return `The SPI (drought index) in ${result.region || 'the selected area'} for ${result.date || result.period || 'the selected period'} was ${spiValue}.`
-  }
-  if (result.wind_speed !== undefined || result.average_wind_speed !== undefined) {
-    const windSpeed = result.wind_speed ?? result.average_wind_speed
-    return `The average wind speed in ${result.region || 'the selected area'} on ${result.date || 'the selected date'} was ${windSpeed} ${result.unit || 'm/s'}.`
-  }
-  
-  // Generic fallback
-  const excludeKeys = ['static_url', 'overlay_url', 'geojson', 'bounds', 'map_config', 'tile_config']
-  const formattedPairs = Object.entries(result)
-    .filter(([key, value]) => value !== null && value !== undefined && !excludeKeys.includes(key))
-    .map(([key, value]) => {
-      const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-      return `${formattedKey}: ${value}`
-    })
-    .join('\n')
-  
-  return formattedPairs || 'Analysis completed successfully.'
-}
 
-// ✅ FIXED: Process response (extracted for reuse)
-function processResponse(r: any, currentQuery: string): { 
-  cleanContent: string, 
-  imageUrl: string | null, 
-  mapData: MapData | undefined 
-} {
-  let cleanContent = ''
-  
-  // ✅ FIX: Handle both string AND object results, remove strict status check
-  if (r?.analysis_data?.result && r?.analysis_data?.status !== 'error') {
-    const result = r.analysis_data.result
+  // ✅ NEW: Format data result object into readable text
+  function formatDataResult(result: any): string {
+    console.log('📊 Formatting data result:', result)
     
-    if (typeof result === 'string') {
-      const hasUrl = /https?:\/\/[^\s]+/.test(result)
-      if (!hasUrl) {
-        cleanContent = result
-        console.log('📝 Using text result:', cleanContent)
-      }
-    } 
-    else if (typeof result === 'object' && result !== null) {
-      // ✅ NEW: Check if it's a data result (not a map result)
-      const isMapResult = !!(result.static_url || result.overlay_url || result.geojson)
-      if (!isMapResult) {
-        cleanContent = formatDataResult(result)
-        console.log('📊 Formatted data result:', cleanContent)
+    if (result.average_temperature !== undefined) {
+      return `The average temperature in ${result.region || 'the selected area'} on ${result.date || 'the selected date'} was ${result.average_temperature}${result.unit || '°C'}.`
+    }
+    if (result.total_precipitation !== undefined) {
+      return `The total precipitation in ${result.region || 'the selected area'} on ${result.date || 'the selected date'} was ${result.total_precipitation} ${result.unit || 'mm'}.`
+    }
+    if (result.average_precipitation !== undefined) {
+      return `The average precipitation in ${result.region || 'the selected area'} on ${result.date || 'the selected date'} was ${result.average_precipitation} ${result.unit || 'mm'}.`
+    }
+    if (result.spi !== undefined || result.spi_value !== undefined) {
+      const spiValue = result.spi ?? result.spi_value
+      return `The SPI (drought index) in ${result.region || 'the selected area'} for ${result.date || result.period || 'the selected period'} was ${spiValue}.`
+    }
+    if (result.wind_speed !== undefined || result.average_wind_speed !== undefined) {
+      const windSpeed = result.wind_speed ?? result.average_wind_speed
+      return `The average wind speed in ${result.region || 'the selected area'} on ${result.date || 'the selected date'} was ${windSpeed} ${result.unit || 'm/s'}.`
+    }
+    
+    // Generic fallback
+    const excludeKeys = ['static_url', 'overlay_url', 'geojson', 'bounds', 'map_config', 'tile_config']
+    const formattedPairs = Object.entries(result)
+      .filter(([key, value]) => value !== null && value !== undefined && !excludeKeys.includes(key))
+      .map(([key, value]) => {
+        const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+        return `${formattedKey}: ${value}`
+      })
+      .join('\n')
+    
+    return formattedPairs || 'Analysis completed successfully.'
+  }
+
+  // ✅ FIXED: Process response (extracted for reuse)
+  function processResponse(r: any, currentQuery: string): { 
+    cleanContent: string, 
+    imageUrl: string | null, 
+    mapData: MapData | undefined 
+  } {
+    let cleanContent = ''
+    
+    // ✅ FIX: Handle both string AND object results, remove strict status check
+    if (r?.analysis_data?.result && r?.analysis_data?.status !== 'error') {
+      const result = r.analysis_data.result
+      
+      if (typeof result === 'string') {
+        const hasUrl = /https?:\/\/[^\s]+/.test(result)
+        if (!hasUrl) {
+          cleanContent = result
+          console.log('📝 Using text result:', cleanContent)
+        }
+      } 
+      else if (typeof result === 'object' && result !== null) {
+        // ✅ NEW: Check if it's a data result (not a map result)
+        const isMapResult = !!(result.static_url || result.overlay_url || result.geojson)
+        if (!isMapResult) {
+          cleanContent = formatDataResult(result)
+          console.log('📊 Formatted data result:', cleanContent)
+        }
       }
     }
-  }
 
     if (!cleanContent && r?.content) {
       cleanContent = typeof r.content === 'string' ? r.content : ''
+    }
+
+    // ✅ FIX: Clean up placeholder URLs like "result.static_url" that weren't interpolated
+    if (typeof cleanContent === 'string') {
+      // Remove markdown links with placeholder URLs
+      cleanContent = cleanContent.replace(/\[.*?\]\(result\.[a-z_]+\)/gi, '')
+      // Remove markdown image syntax with placeholder URLs
+      cleanContent = cleanContent.replace(/!\[.*?\]\(result\.[a-z_]+\)/gi, '')
+      // Remove any remaining "result.static_url" or similar text
+      cleanContent = cleanContent.replace(/result\.(static_url|overlay_url|url|image_url)/gi, '')
+      // Clean up leftover formatting artifacts
+      cleanContent = cleanContent.replace(/\*\*.*?:\*\*\s*$/gm, '') // Remove "**Label:**" with nothing after
+      cleanContent = cleanContent.replace(/^\s*-\s*$/gm, '') // Remove standalone bullet points
+      cleanContent = cleanContent.replace(/\n{3,}/g, '\n\n') // Reduce multiple newlines
+      cleanContent = cleanContent.trim()
     }
 
     let markdownExtractedUrl = null
@@ -281,13 +302,18 @@ function processResponse(r: any, currentQuery: string): {
     const hasGeoTiffUrl = !!(r?.geotiff_url)
     let hasGeoJsonData = !!(r?.geojson?.features?.length > 0)
 
-    // ✅ NEW: Detect animation/GIF from backend or URL
+    // ✅ FIXED: Detect animation/GIF from backend or URL (now handles query parameters)
     const isAnimation = (
       r?.type === 'animation' ||
+      r?.metadata?.computation_type === 'animation' ||
       r?.media_type === 'gif' ||
-      (typeof r?.static_url === 'string' && r.static_url.toLowerCase().endsWith('.gif')) ||
-      (typeof r?.overlay_url === 'string' && r.overlay_url.toLowerCase().endsWith('.gif'))
+      isGifUrl(r?.static_url) ||
+      isGifUrl(r?.overlay_url)
     )
+
+    if (isAnimation) {
+      console.log('🎞️ Animation/GIF detected via isGifUrl helper')
+    }
 
     if (hasGeoJsonData) {
       r.geojson.features = r.geojson.features
@@ -327,11 +353,34 @@ function processResponse(r: any, currentQuery: string): {
     let imageUrl = null
     let mapData: MapData | undefined
 
-    // ✅ CASE 1: Simple visualization OR animation (GIF) - STATIC IMAGE ONLY
-    if ((isSimpleVisualization || isAnimation) && hasStaticUrl) {
-      console.log('📊 Static-only detected (animation/simple) - using static image (GIF)')
+    // ✅ CASE 1: Animation (GIF) or simple visualization — STATIC ONLY
+    if (isAnimation && hasStaticUrl) {
+      console.log('🎞️ Animation detected (GIF) — showing static image only, no Azure map')
       imageUrl = r.static_url
+      mapData = undefined  // force no AzureMapView
+      
+      // ✅ NEW: Provide helpful message if content was cleaned away
+      if (!cleanContent || cleanContent.length < 10) {
+        const region = r?.metadata?.region || r?.region || ''
+        const dateRange = r?.metadata?.date || r?.date || ''
+        const variable = r?.metadata?.variable || r?.variable || 'data'
+        cleanContent = `Here's the animation showing ${variable.replace(/_/g, ' ')}${region ? ` for ${region.replace(/_/g, ' ')}` : ''}${dateRange ? ` (${dateRange})` : ''}.`
+      }
     }
+    // ✅ CASE 2: Simple visualization (comparison/subplot) — STATIC ONLY
+    else if (isSimpleVisualization && hasStaticUrl) {
+      console.log('📊 Simple visualization detected — using static image only')
+      imageUrl = r.static_url
+      mapData = undefined
+      
+      // ✅ NEW: Provide helpful message if content was cleaned away
+      if (!cleanContent || cleanContent.length < 10) {
+        const region = r?.metadata?.region || r?.region || ''
+        const variable = r?.metadata?.variable || r?.variable || 'data'
+        cleanContent = `Here's the visualization${variable ? ` of ${variable.replace(/_/g, ' ')}` : ''}${region ? ` for ${region.replace(/_/g, ' ')}` : ''}.`
+      }
+    }
+    // ✅ CASE 3: Interactive map
     else if ((hasStaticUrl || hasOverlayUrl || hasGeoJsonData || hasGeoTiffUrl) && !isSimpleVisualization) {
       let mapBounds = null
       let mapCenter = r.map_config?.center

@@ -4,14 +4,8 @@ import 'azure-maps-control/dist/atlas.min.css'
 import { loadGeoTiffOverlay, createDynamicLegend } from '../utils/geotiffLoader'
 import ColorbarLegend from './ColorbarLegend'
 
-// ✅ Optional tile bounds helper
-let tilebounds: any = null
-try {
-  // @ts-ignore
-  tilebounds = require('@mapbox/tilebounds')
-} catch {
-  console.warn('⚠️ tilebounds library not available - advanced tile debug limited')
-}
+// tilebounds removed - not needed for core functionality
+const tilebounds: any = null
 
 interface AzureMapViewProps {
   mapData: {
@@ -47,7 +41,7 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
      mapData.azureData.static_url)
   )
 
-  // ✅ NEW: Skip map entirely if static/overlay is a GIF
+  // ✅ Skip map entirely if static/overlay is a GIF
   const isGif = (
     typeof mapData?.azureData?.static_url === 'string' && mapData.azureData.static_url.toLowerCase().endsWith('.gif')
   ) || (
@@ -57,6 +51,36 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
   if (!hasRealMapData || isGif) {
     console.log('🚫 AzureMapView: Skipping map rendering (no map data or GIF)')
     return null
+  }
+
+  // ✅ STATIC-ONLY RENDERING: If use_tiles is not true, show static image instead of Azure Map
+  const useTilesFlag = mapData?.azureData?.use_tiles === true
+  const staticUrl = mapData?.azureData?.static_url
+  const hasValidTileConfig = !!(mapData?.azureData?.tile_config?.tile_url)
+
+  if (!useTilesFlag && staticUrl && typeof staticUrl === 'string' && staticUrl.startsWith('http')) {
+    console.log('📸 AzureMapView: Rendering static image (use_tiles is not true)')
+    console.log('📸 Static URL:', staticUrl)
+    console.log('📸 Response type:', mapData?.azureData?.type)
+    
+    return (
+      <div className="flex justify-center items-center w-full" style={{ height }}>
+        <img 
+          src={staticUrl} 
+          alt="Weather analysis map"
+          style={{ 
+            maxHeight: height, 
+            maxWidth: '100%', 
+            objectFit: 'contain',
+            borderRadius: '8px'
+          }}
+          onError={(e) => {
+            console.error('❌ Static image failed to load:', staticUrl)
+            ;(e.target as HTMLImageElement).style.display = 'none'
+          }}
+        />
+      </div>
+    )
   }
 
   useEffect(() => {
