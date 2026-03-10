@@ -253,7 +253,10 @@ export default function HydrologyDarkChat() {
         }
       }
     }
-
+    // ✅ NEW: Pick up agent's text response (Analysis Plan + Summary + Follow-ups)
+    if (!cleanContent && r?.agent_response) {
+      cleanContent = r.agent_response
+    }
     if (!cleanContent && r?.content) {
       cleanContent = typeof r.content === 'string' ? r.content : ''
     }
@@ -469,11 +472,24 @@ export default function HydrologyDarkChat() {
       imageUrl = r?.content?.match(/https?:\/\/[^\s]+/)?.[0] || null
     }
 
-    if (markdownExtractedUrl) {
+    // Only use markdown-extracted URL if no static_url from backend
+    // static_url is always more reliable than URLs parsed from agent text
+    if (markdownExtractedUrl && !r?.static_url) {
       imageUrl = markdownExtractedUrl
     }
 
-    return { cleanContent, imageUrl, mapData }
+    // Check for multiple visualizations (agricultural drought = 3 images)
+    const allViz = r?.all_visualizations
+    let allImageUrls: string[] = []
+    
+    if (Array.isArray(allViz) && allViz.length > 1) {
+      allImageUrls = allViz
+        .map((v: any) => v.static_url)
+        .filter((url: string) => url && typeof url === 'string' && url.startsWith('http'))
+      console.log(`📊 Multiple visualizations detected: ${allImageUrls.length} images`)
+    }
+
+    return { cleanContent, imageUrl, mapData, allImageUrls }
   }
 
   async function handleSubmit(e?: React.FormEvent) {
@@ -538,10 +554,22 @@ export default function HydrologyDarkChat() {
       let hasError = false
       let errorMessage = ''
 
-      if (r?.status === 'error' || r?.analysis_data?.status === 'error') {
+      // Only treat as hard error if top-level status is error
+      // If status is "success" but analysis_data has an error, the agent recovered
+      // gracefully — show the agent's content/explanation instead of the error
+      if (r?.status === 'error') {
         hasError = true
         errorMessage = r?.error || r?.analysis_data?.error || 'An error occurred during analysis'
-        console.log('❌ Error detected:', errorMessage)
+        console.log('❌ Hard error detected:', errorMessage)
+      } else if (r?.analysis_data?.status === 'error' && !r?.content && !r?.agent_response) {
+        // Only show analysis error if there's no agent text to display
+        hasError = true
+        errorMessage = r?.analysis_data?.error || 'An error occurred during analysis'
+        console.log('❌ Analysis error with no recovery text:', errorMessage)
+      } else if (r?.analysis_data?.status === 'error' && (r?.content || r?.agent_response)) {
+        // Agent recovered gracefully — log it but don't block the response
+        console.log('⚠️ Analysis had error but agent recovered:', r?.analysis_data?.error)
+        console.log('✅ Showing agent recovery text instead')
       }
 
       if (hasError) {
@@ -557,14 +585,15 @@ export default function HydrologyDarkChat() {
       }
 
       // Process the response
-      const { cleanContent, imageUrl, mapData } = processResponse(r, currentQuery)
+      const { cleanContent, imageUrl, mapData, allImageUrls } = processResponse(r, currentQuery)
 
       const assistantMsg: Message = {
         id: String(Date.now() + 1),
         role: 'assistant',
         text: cleanContent,
-        imageUrl: imageUrl,
-        mapData: mapData
+        imageUrl: allImageUrls && allImageUrls.length > 1 ? undefined : imageUrl,
+        mapData: mapData,
+        allImageUrls: allImageUrls && allImageUrls.length > 1 ? allImageUrls : undefined
       }
 
       setMessages((prev) => [...prev, assistantMsg])
@@ -648,7 +677,7 @@ export default function HydrologyDarkChat() {
             {messages.map((m) => (
               <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 {/* Text message bubble */}
-                {m.text && !m.mapData && !m.imageUrl && (
+                {m.text && !m.mapData && !m.imageUrl && !m.allImageUrls && (
                   <div className={`max-w-[85%] ${
                     m.role === 'user' 
                       ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl rounded-tr-sm' 
@@ -690,8 +719,35 @@ export default function HydrologyDarkChat() {
                   </div>
                 )}
                 
-                {/* Image only message */}
-                {m.imageUrl && !m.mapData && (
+                {/* Multiple visualizations (e.g., agricultural drought: SPI + SM + Yield) */}
+                {m.allImageUrls && m.allImageUrls.length > 1 && !m.mapData && (
+                  <div className="w-full">
+                    {m.text && (
+                      <div className="max-w-[85%] mb-4 bg-black border border-gray-800 text-gray-100 rounded-2xl rounded-tl-sm px-5 py-3">
+                        <div className="whitespace-pre-wrap">{m.text}</div>
+                      </div>
+                    )}
+                    <div className="bg-black border border-gray-800 rounded-2xl rounded-tl-sm px-5 py-3">
+                      <div className="grid grid-cols-1 gap-4">
+                        {m.allImageUrls.map((url, idx) => (
+                          <img 
+                            key={idx}
+                            src={url} 
+                            alt={`Analysis ${idx + 1}`} 
+                            className="rounded-lg w-full cursor-pointer hover:opacity-90 transition-opacity"
+                            onClick={() => window.open(url, '_blank')}
+                          />
+                        ))}
+                      </div>
+                      <p className="text-xs text-gray-400 mt-2">
+                        Click any image to view full size
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Image only message (single) */}
+                {m.imageUrl && !m.mapData && !m.allImageUrls && (
                   <div className={`max-w-[85%] ${
                     m.role === 'user' 
                       ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl rounded-tr-sm' 

@@ -86,4 +86,5 @@ export interface MapData {
     text: string
     imageUrl?: string
     mapData?: MapData
+    allImageUrls?: string[] 
   }

@@ -124,6 +124,29 @@ export async function callMultiAgentFunction(requestData: any) {
     }
   }
 
+  // === URL EXTRACTION FALLBACKS ===
+  // 1. From all_visualizations array
+  if (!transformedResponse.response.static_url && data.all_visualizations?.length > 0) {
+    transformedResponse.response.static_url = data.all_visualizations[0].static_url
+    console.log('🔧 Promoted static_url from all_visualizations:', transformedResponse.response.static_url)
+  }
+  // 2. From analysis_data.result.static_url
+  if (!transformedResponse.response.static_url && data.analysis_data?.result?.static_url) {
+    transformedResponse.response.static_url = data.analysis_data.result.static_url
+    console.log('🔧 Extracted static_url from analysis_data.result:', transformedResponse.response.static_url)
+  }
+  // 3. From agent_response text (blob URLs)
+  if (!transformedResponse.response.static_url && data.agent_response) {
+    const urlMatch = data.agent_response.match(/https:\/\/[^\s"')]+\.png[^\s"')*]*/);
+    if (urlMatch) {
+      transformedResponse.response.static_url = urlMatch[0]
+      console.log('🔧 Extracted static_url from agent_response text:', transformedResponse.response.static_url)
+    }
+  }
+  // Also pass through all_visualizations for multi-image display
+  transformedResponse.response.all_visualizations = data.all_visualizations || []
+  transformedResponse.response.agent_response = data.agent_response || data.content
+
   console.log('✅ Transformed FastAPI response:', transformedResponse)
   console.log('✅ Temperature data count:', transformedResponse.response.temperature_data.length)
   console.log('✅ Use tiles:', transformedResponse.response.use_tiles)
