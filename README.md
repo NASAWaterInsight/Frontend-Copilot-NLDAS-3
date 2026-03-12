@@ -2,7 +2,7 @@
 
 React/TypeScript web client for the Hydrology Copilot, providing a conversational interface for natural-language-driven hydrological data analysis using NASA's NLDAS-3 dataset.
 
-**Paper:** *Hydrology Copilot: A Cloud-Native AI System for Hydrological Data Analysis* (submitted to Computer and Geoscience Journal)
+**Paper:** *Hydrology Copilot: A Cloud-Native AI System for Hydrological Data Analysis* (submitted to Computers and Geosciences Journal)
 
 **Backend repo:** [NASAWaterInsight/Backend-Copilot-NLDAS-3](https://github.com/NASAWaterInsight/Backend-Copilot-NLDAS-3)
 
