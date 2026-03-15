@@ -60,9 +60,42 @@ export default function ColorbarLegend({
       'SPI3': 'Drought Index',
       'Wind_Speed': 'Wind Speed',
       'Qair': 'Humidity',
-      'PSurf': 'Pressure'
+      'PSurf': 'Pressure',
+      'Evap': 'Evapotranspiration',
+      'ESoil': 'Soil Evaporation',
+      'ECanop': 'Canopy Evap.',
+      'TVeg': 'Transpiration',
+      'PotEvap': 'Potential ET',
+      'SoilM_0_10cm': 'Soil Moisture (0-10cm)',
+      'SoilM_10_40cm': 'Soil Moisture (10-40cm)',
+      'SoilM_40_100cm': 'Soil Moisture (40-100cm)',
+      'SoilM_100_200cm': 'Soil Moisture (100-200cm)',
+      'SoilT_0_10cm': 'Soil Temp (0-10cm)',
+      'SoilT_10_40cm': 'Soil Temp (10-40cm)',
+      'SoilT_40_100cm': 'Soil Temp (40-100cm)',
+      'SoilT_100_200cm': 'Soil Temp (100-200cm)',
+      'AvgSurfT': 'Surface Temp',
+      'Qle': 'Latent Heat',
+      'Qh': 'Sensible Heat',
+      'Qg': 'Ground Heat',
+      'Qs': 'Surface Runoff',
+      'Qsb': 'Baseflow',
+      'SWE': 'Snow Water Eq.',
+      'SnowDepth': 'Snow Depth',
+      'TWS': 'Total Water Storage',
+      'GWS': 'Groundwater',
+      'LAI': 'Leaf Area Index',
+      'LWnet': 'Net Longwave',
+      'SWnet': 'Net Shortwave',
+      'VPD': 'Vapor Pressure Deficit',
+      'WaterTableD': 'Water Table Depth',
+      'LWdown': 'Longwave Down',
+      'SWdown': 'Shortwave Down',
+      'Wind_E': 'Wind (East)',
+      'Wind_N': 'Wind (North)',
+      'corn_yield': 'Corn Yield'
     }
-    return nameMap[variable] || variable
+    return nameMap[variable] || variable.replace(/_/g, ' ')
   }
 
   return (

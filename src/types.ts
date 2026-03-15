@@ -42,4 +42,6 @@ export interface Message {
   text?: string
   imageUrl?: string
   mapData?: MapData
+  allImageUrls?: string[]
+  elapsedMs?: number  // ⏱️ Frontend timer: ms from submit to response
 }

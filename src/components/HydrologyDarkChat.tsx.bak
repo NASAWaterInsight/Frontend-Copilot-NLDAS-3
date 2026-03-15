@@ -57,17 +57,16 @@ export default function HydrologyDarkChat() {
   }, [])
 
   // Handle new conversation
-  const handleNewConversation = async () => {
+  const handleNewConversation = () => {
     clearUserId()
-    const newId = await getStableUserId()  // Generate fresh ID immediately
-    setUserId(newId)
+    setUserId('')
     setThreadId(null)
     setMessages([])
     setError(null)
     setDebug(null)
     resetSteps()
-    console.log('🔄 New conversation with user ID:', newId.substring(0, 8) + '...')
-}
+    console.log('🔄 Cleared user ID and thread ID for fresh conversation')
+  }
 
   const forceDebugLog = () => {
     console.log('🔥 FORCE DEBUG LOG TEST')
@@ -106,45 +105,7 @@ export default function HydrologyDarkChat() {
       'SPI': 'SPI (Drought Index)',
       'SPI3': 'SPI-3 (3-Month Drought)',
       'spi': 'SPI (Drought Index)',
-      'temperature': 'Temperature',
-      // Open Loop variables
-      'Evap': 'Evapotranspiration',
-      'PotEvap': 'Potential ET',
-      'ECanop': 'Canopy Evaporation',
-      'ESoil': 'Soil Evaporation',
-      'TVeg': 'Transpiration',
-      'Qs': 'Surface Runoff',
-      'Qsb': 'Baseflow Runoff',
-      'Snowf': 'Snowfall',
-      'SoilM_0_10cm': 'Soil Moisture (0-10cm)',
-      'SoilM_10_40cm': 'Soil Moisture (10-40cm)',
-      'SoilM_40_100cm': 'Soil Moisture (40-100cm)',
-      'SoilM_100_200cm': 'Soil Moisture (100-200cm)',
-      'SoilM_root_zone': 'Root-Zone Soil Moisture',
-      'VPD': 'Vapor Pressure Deficit',
-      'SWE': 'Snow Water Equivalent',
-      'SnowDepth': 'Snow Depth',
-      'AvgSurfT': 'Surface Temperature',
-      'SoilT_0_10cm': 'Soil Temp (0-10cm)',
-      'SoilT_10_40cm': 'Soil Temp (10-40cm)',
-      'SoilT_40_100cm': 'Soil Temp (40-100cm)',
-      'SoilT_100_200cm': 'Soil Temp (100-200cm)',
-      'LAI': 'Leaf Area Index',
-      'GPP': 'Gross Primary Prod.',
-      'NEE': 'Net Ecosystem Exchange',
-      'NPP': 'Net Primary Prod.',
-      'TWS': 'Total Water Storage',
-      'GWS': 'Groundwater Storage',
-      'WaterTableD': 'Water Table Depth',
-      'Qh': 'Sensible Heat Flux',
-      'Qle': 'Latent Heat Flux',
-      'Qg': 'Ground Heat Flux',
-      'LWnet': 'Net Longwave',
-      'SWnet': 'Net Shortwave',
-      'LWdown': 'Longwave Down',
-      'SWdown': 'Shortwave Down',
-      'PSurf': 'Surface Pressure',
-      'corn_yield': 'Corn Yield'
+      'temperature': 'Temperature'
     }
     return variableMap[variable] || variable.replace(/_/g, ' ')
   }
@@ -164,50 +125,7 @@ export default function HydrologyDarkChat() {
       'humidity': '%',
       'SPI': '',
       'SPI3': '',
-      'spi': '',
-      // Open Loop variables
-      'Evap': 'mm/day',
-      'PotEvap': 'mm/day',
-      'ECanop': 'mm/day',
-      'ESoil': 'mm/day',
-      'TVeg': 'mm/day',
-      'Qs': 'mm/day',
-      'Qsb': 'mm/day',
-      'Snowf': 'mm/day',
-      'SoilM_0_10cm': 'm³/m³',
-      'SoilM_10_40cm': 'm³/m³',
-      'SoilM_40_100cm': 'm³/m³',
-      'SoilM_100_200cm': 'm³/m³',
-      'SoilM_root_zone': 'm³/m³',
-      'VPD': 'kPa',
-      'SWE': 'kg/m²',
-      'SnowDepth': 'cm',
-      'SnowFrac': '',
-      'AvgSurfT': '°C',
-      'AvgSurfT_max': '°C',
-      'AvgSurfT_min': '°C',
-      'SoilT_0_10cm': '°C',
-      'SoilT_10_40cm': '°C',
-      'SoilT_40_100cm': '°C',
-      'SoilT_100_200cm': '°C',
-      'LAI': '',
-      'GPP': 'g/m²/day',
-      'NEE': 'g/m²/day',
-      'NPP': 'g/m²/day',
-      'TWS': 'mm',
-      'GWS': 'mm',
-      'WaterTableD': 'm',
-      'CanopInt': 'kg/m²',
-      'LWnet': 'W/m²',
-      'SWnet': 'W/m²',
-      'Qh': 'W/m²',
-      'Qle': 'W/m²',
-      'Qg': 'W/m²',
-      'LWdown': 'W/m²',
-      'SWdown': 'W/m²',
-      'PSurf': 'Pa',
-      // Crop yield
-      'corn_yield': 'kg/ha'
+      'spi': ''
     }
     return unitMap[variable] || ''
   }
