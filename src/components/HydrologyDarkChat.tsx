@@ -418,10 +418,11 @@ export default function HydrologyDarkChat() {
     const isSimpleVisualization = (
       r?.type === "simple_visualization" || 
       r?.metadata?.computation_type === "comparison" ||
+      r?.metadata?.computation_type === "analysis" ||
       r?.use_tiles === false ||
       (!r?.bounds && !r?.map_config && hasStaticUrl) ||
       /recovery|flash drought/i.test(currentQuery)
-    )
+  )
 
     let imageUrl = null
     let mapData: MapData | undefined
@@ -778,13 +779,13 @@ export default function HydrologyDarkChat() {
                       </div>
                     )}
                     
-                    {m.mapData && AZURE_MAPS_KEY && (
+                    {m.mapData && (
                       <div className="bg-black border border-gray-800 rounded-2xl rounded-tl-sm px-5 py-3">
                         <div className="text-sm font-semibold text-gray-300 mb-2">🗺️ Interactive Map:</div>
                         <div className="rounded-lg overflow-hidden border border-gray-700">
                           <AzureMapView 
                             mapData={m.mapData} 
-                            subscriptionKey={AZURE_MAPS_KEY}
+                            subscriptionKey={AZURE_MAPS_KEY || ''}
                             clientId={AZURE_MAPS_CLIENT_ID}
                             height="400px"
                           />
