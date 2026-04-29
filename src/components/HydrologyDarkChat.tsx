@@ -24,7 +24,9 @@ export default function HydrologyDarkChat() {
   const [userId, setUserId] = useState<string>('')
   const [threadId, setThreadId] = useState<string | null>(null)
   const endRef = useRef<HTMLDivElement | null>(null)
+  const chatContainerRef = useRef<HTMLDivElement | null>(null)
   const [showDebug, setShowDebug] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   // Streaming hook
   const { 
@@ -59,7 +61,7 @@ export default function HydrologyDarkChat() {
   // Handle new conversation
   const handleNewConversation = async () => {
     clearUserId()
-    const newId = await getStableUserId()  // Generate fresh ID immediately
+    const newId = await getStableUserId()
     setUserId(newId)
     setThreadId(null)
     setMessages([])
@@ -67,7 +69,122 @@ export default function HydrologyDarkChat() {
     setDebug(null)
     resetSteps()
     console.log('🔄 New conversation with user ID:', newId.substring(0, 8) + '...')
-}
+  }
+
+  // ═══ PDF EXPORT FUNCTION ═══
+  const handleExportPDF = async () => {
+    const container = chatContainerRef.current
+    if (!container || messages.length === 0) return
+
+    setExporting(true)
+
+    try {
+      const { default: html2canvas } = await import('html2canvas')
+      const { default: jsPDF } = await import('jspdf')
+
+      // Swap interactive maps for static images
+      container.querySelectorAll('[data-export-hide="true"]').forEach(el => {
+        ;(el as HTMLElement).style.display = 'none'
+      })
+      container.querySelectorAll('[data-export-show="true"]').forEach(el => {
+        ;(el as HTMLElement).style.display = 'block'
+      })
+
+      // Expand container to full height
+      const orig = {
+        height: container.style.height,
+        maxHeight: container.style.maxHeight,
+        overflow: container.style.overflow
+      }
+      container.style.height = 'auto'
+      container.style.maxHeight = 'none'
+      container.style.overflow = 'visible'
+
+      // Wait for images to load
+      await new Promise(r => setTimeout(r, 800))
+
+      const canvas = await html2canvas(container, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#000000',
+        logging: false
+      })
+
+      // Restore container
+      container.style.height = orig.height
+      container.style.maxHeight = orig.maxHeight
+      container.style.overflow = orig.overflow
+      container.querySelectorAll('[data-export-hide="true"]').forEach(el => {
+        ;(el as HTMLElement).style.display = ''
+      })
+      container.querySelectorAll('[data-export-show="true"]').forEach(el => {
+        ;(el as HTMLElement).style.display = 'none'
+      })
+
+      // Build multi-page PDF
+      const pdf = new jsPDF({
+        orientation: canvas.width > canvas.height ? 'landscape' : 'portrait',
+        unit: 'pt',
+        format: 'a4'
+      })
+      const pageW = pdf.internal.pageSize.getWidth()
+      const pageH = pdf.internal.pageSize.getHeight()
+      const marginTop = 40
+      const marginBottom = 30
+      const contentH = pageH - marginTop - marginBottom
+      const scale = pageW / canvas.width
+      const scaledH = canvas.height * scale
+      const totalPages = Math.ceil(scaledH / contentH)
+
+      for (let p = 0; p < totalPages; p++) {
+        if (p > 0) pdf.addPage()
+
+        // Header on first page
+        if (p === 0) {
+          pdf.setFontSize(14)
+          pdf.setTextColor(30, 30, 60)
+          pdf.text('NLDAS-3 Hydrology Copilot — Session Export', 40, 25)
+          pdf.setFontSize(8)
+          pdf.setTextColor(120, 120, 140)
+          pdf.text(new Date().toLocaleString(), pageW - 160, 25)
+        }
+
+        // Slice canvas for this page
+        const sliceCanvas = document.createElement('canvas')
+        sliceCanvas.width = canvas.width
+        const sliceStartY = (p * contentH) / scale
+        const sliceHeight = Math.min(contentH / scale, canvas.height - sliceStartY)
+        sliceCanvas.height = sliceHeight
+        const ctx = sliceCanvas.getContext('2d')!
+        ctx.drawImage(
+          canvas,
+          0, sliceStartY, canvas.width, sliceHeight,
+          0, 0, canvas.width, sliceHeight
+        )
+        pdf.addImage(
+          sliceCanvas.toDataURL('image/png'),
+          'PNG', 0, marginTop, pageW, sliceHeight * scale
+        )
+
+        // Footer
+        pdf.setFontSize(7)
+        pdf.setTextColor(150, 150, 170)
+        pdf.text(
+          `NLDAS-3 Weather Copilot — Page ${p + 1} of ${totalPages}`,
+          pageW / 2, pageH - 12, { align: 'center' }
+        )
+      }
+
+      pdf.save(`hydrology_chat_${new Date().toISOString().slice(0, 10)}.pdf`)
+      console.log('✅ PDF exported successfully')
+    } catch (err) {
+      console.error('❌ PDF export failed:', err)
+      alert('PDF export failed. Check console for details.')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const forceDebugLog = () => {
     console.log('🔥 FORCE DEBUG LOG TEST')
@@ -107,7 +224,6 @@ export default function HydrologyDarkChat() {
       'SPI3': 'SPI-3 (3-Month Drought)',
       'spi': 'SPI (Drought Index)',
       'temperature': 'Temperature',
-      // Open Loop variables
       'Evap': 'Evapotranspiration',
       'PotEvap': 'Potential ET',
       'ECanop': 'Canopy Evaporation',
@@ -129,10 +245,13 @@ export default function HydrologyDarkChat() {
       'SoilT_10_40cm': 'Soil Temp (10-40cm)',
       'SoilT_40_100cm': 'Soil Temp (40-100cm)',
       'SoilT_100_200cm': 'Soil Temp (100-200cm)',
+      'SoilM_root_zone': 'Root-Zone Soil Moisture (0-100cm)',
+      'SoilMoisture_root_zone': 'Root-Zone Soil Moisture',  // GPT-4o sometimes uses this
+      'Evapotranspiration': 'Evapotranspiration',    
       'LAI': 'Leaf Area Index',
-      'GPP': 'Gross Primary Prod.',
-      'NEE': 'Net Ecosystem Exchange',
-      'NPP': 'Net Primary Prod.',
+      'GPP': 'gC/m²/day',
+      'NEE': 'gC/m²/day',
+      'NPP': 'gC/m²/day',
       'TWS': 'Total Water Storage',
       'GWS': 'Groundwater Storage',
       'WaterTableD': 'Water Table Depth',
@@ -144,69 +263,30 @@ export default function HydrologyDarkChat() {
       'LWdown': 'Longwave Down',
       'SWdown': 'Shortwave Down',
       'PSurf': 'Surface Pressure',
-      'corn_yield': 'Corn Yield'
+      'corn_yield': 'Corn Yield',
+      'SnowFrac': 'Snow Cover Fraction',
+      'CanopInt': 'Canopy Interception'
     }
     return variableMap[variable] || variable.replace(/_/g, ' ')
   }
 
   function getVariableUnit(variable: string): string {
     const unitMap: { [key: string]: string } = {
-      'Tair': '°C',
-      'temperature': '°C',
-      'Rainf': 'mm/hr',
-      'Wind_Speed': 'm/s',
-      'wind_speed': 'm/s',
-      'Wind_E': 'm/s',
-      'Wind_N': 'm/s',
-      'Qair': 'kg/kg',
-      'Qair_f_inst': 'kg/kg',
-      'RelHum': '%',
-      'humidity': '%',
-      'SPI': '',
-      'SPI3': '',
-      'spi': '',
-      // Open Loop variables
-      'Evap': 'mm/day',
-      'PotEvap': 'mm/day',
-      'ECanop': 'mm/day',
-      'ESoil': 'mm/day',
-      'TVeg': 'mm/day',
-      'Qs': 'mm/day',
-      'Qsb': 'mm/day',
-      'Snowf': 'mm/day',
-      'SoilM_0_10cm': 'm³/m³',
-      'SoilM_10_40cm': 'm³/m³',
-      'SoilM_40_100cm': 'm³/m³',
-      'SoilM_100_200cm': 'm³/m³',
-      'SoilM_root_zone': 'm³/m³',
-      'VPD': 'kPa',
-      'SWE': 'kg/m²',
-      'SnowDepth': 'cm',
-      'SnowFrac': '',
-      'AvgSurfT': '°C',
-      'AvgSurfT_max': '°C',
-      'AvgSurfT_min': '°C',
-      'SoilT_0_10cm': '°C',
-      'SoilT_10_40cm': '°C',
-      'SoilT_40_100cm': '°C',
-      'SoilT_100_200cm': '°C',
-      'LAI': '',
-      'GPP': 'g/m²/day',
-      'NEE': 'g/m²/day',
-      'NPP': 'g/m²/day',
-      'TWS': 'mm',
-      'GWS': 'mm',
-      'WaterTableD': 'm',
-      'CanopInt': 'kg/m²',
-      'LWnet': 'W/m²',
-      'SWnet': 'W/m²',
-      'Qh': 'W/m²',
-      'Qle': 'W/m²',
-      'Qg': 'W/m²',
-      'LWdown': 'W/m²',
-      'SWdown': 'W/m²',
-      'PSurf': 'Pa',
-      // Crop yield
+      'Tair': '°C', 'temperature': '°C', 'Rainf': 'mm/hr',
+      'Wind_Speed': 'm/s', 'wind_speed': 'm/s', 'Wind_E': 'm/s', 'Wind_N': 'm/s',
+      'Qair': 'kg/kg', 'Qair_f_inst': 'kg/kg', 'RelHum': '%', 'humidity': '%',
+      'SPI': '', 'SPI3': '', 'spi': '',
+      'Evap': 'mm/day', 'PotEvap': 'mm/day', 'ECanop': 'mm/day', 'ESoil': 'mm/day',
+      'TVeg': 'mm/day', 'Qs': 'mm/day', 'Qsb': 'mm/day', 'Snowf': 'mm/day',
+      'SoilM_0_10cm': 'm³/m³', 'SoilM_10_40cm': 'm³/m³', 'SoilM_40_100cm': 'm³/m³',
+      'SoilM_100_200cm': 'm³/m³', 'SoilM_root_zone': 'm³/m³','SoilM_root_zone': 'm³/m³',
+      'VPD': 'hPa', 'SWE': 'kg/m²', 'SnowDepth': 'cm', 'SnowFrac': '%',
+      'AvgSurfT': '°C', 'AvgSurfT_max': '°C', 'AvgSurfT_min': '°C',
+      'SoilT_0_10cm': '°C', 'SoilT_10_40cm': '°C', 'SoilT_40_100cm': '°C', 'SoilT_100_200cm': '°C',
+      'LAI': '', 'GPP': 'gC/m²/day', 'NEE': 'gC/m²/day', 'NPP': 'gC/m²/day',
+      'TWS': 'mm', 'GWS': 'mm', 'WaterTableD': 'm', 'CanopInt': 'kg/m²',
+      'LWnet': 'W/m²', 'SWnet': 'W/m²', 'Qh': 'W/m²', 'Qle': 'W/m²', 'Qg': 'W/m²',
+      'LWdown': 'W/m²', 'SWdown': 'W/m²', 'PSurf': 'Pa',
       'corn_yield': 'kg/ha'
     }
     return unitMap[variable] || ''
@@ -214,54 +294,34 @@ export default function HydrologyDarkChat() {
 
   function getMapBounds(query: string): MapData['bounds'] {
     const lowerQuery = query.toLowerCase()
-    
-    if (lowerQuery.includes('florida')) {
-      return { north: 31.0, south: 24.5, east: -80.0, west: -87.6 }
-    }
-    if (lowerQuery.includes('california')) {
-      return { north: 42.0, south: 32.5, east: -114.1, west: -124.4 }
-    }
-    if (lowerQuery.includes('maryland')) {
-      return { north: 39.7, south: 37.9, east: -75.0, west: -79.5 }
-    }
-    if (lowerQuery.includes('texas')) {
-      return { north: 36.5, south: 25.8, east: -93.5, west: -106.6 }
-    }
-    if (lowerQuery.includes('michigan')) {
-      return { north: 48.3, south: 41.7, east: -82.4, west: -90.4 }
-    }
-    
+    if (lowerQuery.includes('florida')) return { north: 31.0, south: 24.5, east: -80.0, west: -87.6 }
+    if (lowerQuery.includes('california')) return { north: 42.0, south: 32.5, east: -114.1, west: -124.4 }
+    if (lowerQuery.includes('maryland')) return { north: 39.7, south: 37.9, east: -75.0, west: -79.5 }
+    if (lowerQuery.includes('texas')) return { north: 36.5, south: 25.8, east: -93.5, west: -106.6 }
+    if (lowerQuery.includes('michigan')) return { north: 48.3, south: 41.7, east: -82.4, west: -90.4 }
     return { north: 49.0, south: 25.0, east: -66.0, west: -125.0 }
   }
 
   function extractMarkdownImage(text: string): { imageUrl: string | null, cleanText: string } {
     let markdownImageMatch = text.match(/!\[.*?\]\((https?:\/\/[^\s)]+)\)/)
-    
     if (markdownImageMatch) {
       const imageUrl = markdownImageMatch[1]
       const cleanText = text
         .replace(/!\[.*?\]\(https?:\/\/[^\s)]+\)/g, '')
         .replace(/\[.*?\]\(https?:\/\/[^\s)]+\)/g, '')
-        .trim()
-        .replace(/\n\s*\n/g, '\n')
-      
+        .trim().replace(/\n\s*\n/g, '\n')
       console.log('📷 Detected markdown IMAGE syntax, extracted URL:', imageUrl)
       return { imageUrl, cleanText }
     }
-    
     const markdownLinkMatch = text.match(/\[.*?\]\((https?:\/\/[^\s)]+\.(?:png|jpg|jpeg|gif|webp|svg)[^\s)]*)\)/i)
-    
     if (markdownLinkMatch) {
       const imageUrl = markdownLinkMatch[1]
       const cleanText = text
         .replace(/\[.*?\]\(https?:\/\/[^\s)]+\.(?:png|jpg|jpeg|gif|webp|svg)[^\s)]*\)/gi, '')
-        .trim()
-        .replace(/\n\s*\n/g, '\n')
-      
+        .trim().replace(/\n\s*\n/g, '\n')
       console.log('📷 Detected markdown LINK to image file, extracted URL:', imageUrl)
       return { imageUrl, cleanText }
     }
-    
     return { imageUrl: null, cleanText: text }
   }
 
@@ -273,7 +333,6 @@ export default function HydrologyDarkChat() {
 
   function formatDataResult(result: any): string {
     console.log('📊 Formatting data result:', result)
-    
     if (result.average_temperature !== undefined) {
       return `The average temperature in ${result.region || 'the selected area'} on ${result.date || 'the selected date'} was ${result.average_temperature}${result.unit || '°C'}.`
     }
@@ -291,7 +350,6 @@ export default function HydrologyDarkChat() {
       const windSpeed = result.wind_speed ?? result.average_wind_speed
       return `The average wind speed in ${result.region || 'the selected area'} on ${result.date || 'the selected date'} was ${windSpeed} ${result.unit || 'm/s'}.`
     }
-    
     const excludeKeys = ['static_url', 'overlay_url', 'geojson', 'bounds', 'map_config', 'tile_config']
     const formattedPairs = Object.entries(result)
       .filter(([key, value]) => value !== null && value !== undefined && !excludeKeys.includes(key))
@@ -300,7 +358,6 @@ export default function HydrologyDarkChat() {
         return `${formattedKey}: ${value}`
       })
       .join('\n')
-    
     return formattedPairs || 'Analysis completed successfully.'
   }
 
@@ -308,34 +365,24 @@ export default function HydrologyDarkChat() {
   function processResponse(r: any, currentQuery: string): { 
     cleanContent: string, 
     imageUrl: string | null, 
-    mapData: MapData | undefined 
+    mapData: MapData | undefined,
+    allImageUrls: string[]
   } {
     let cleanContent = ''
     
     if (r?.analysis_data?.result && r?.analysis_data?.status !== 'error') {
       const result = r.analysis_data.result
-      
       if (typeof result === 'string') {
         const hasUrl = /https?:\/\/[^\s]+/.test(result)
-        if (!hasUrl) {
-          cleanContent = result
-          console.log('📝 Using text result:', cleanContent)
-        }
+        if (!hasUrl) { cleanContent = result; console.log('📝 Using text result:', cleanContent) }
       } 
       else if (typeof result === 'object' && result !== null) {
         const isMapResult = !!(result.static_url || result.overlay_url || result.geojson)
-        if (!isMapResult) {
-          cleanContent = formatDataResult(result)
-          console.log('📊 Formatted data result:', cleanContent)
-        }
+        if (!isMapResult) { cleanContent = formatDataResult(result); console.log('📊 Formatted data result:', cleanContent) }
       }
     }
-    if (!cleanContent && r?.agent_response) {
-      cleanContent = r.agent_response
-    }
-    if (!cleanContent && r?.content) {
-      cleanContent = typeof r.content === 'string' ? r.content : ''
-    }
+    if (!cleanContent && r?.agent_response) cleanContent = r.agent_response
+    if (!cleanContent && r?.content) cleanContent = typeof r.content === 'string' ? r.content : ''
 
     if (typeof cleanContent === 'string') {
       cleanContent = cleanContent.replace(/\[.*?\]\(result\.[a-z_]+\)/gi, '')
@@ -351,15 +398,11 @@ export default function HydrologyDarkChat() {
     if (typeof cleanContent === 'string' && 
         (cleanContent.includes('![') || (cleanContent.includes('[') && cleanContent.includes('](')))) {
       const extracted = extractMarkdownImage(cleanContent)
-      if (extracted.imageUrl) {
-        markdownExtractedUrl = extracted.imageUrl
-        cleanContent = extracted.cleanText
-      }
+      if (extracted.imageUrl) { markdownExtractedUrl = extracted.imageUrl; cleanContent = extracted.cleanText }
     }
 
     if (!markdownExtractedUrl && typeof cleanContent === 'string' && cleanContent) {
       const looksLikeAnswer = /\b(is|are|average|total|maximum|minimum|speed|temperature|value)\b/i.test(cleanContent)
-      
       if (!looksLikeAnswer || cleanContent.includes('Analysis completed')) {
         cleanContent = cleanContent.replace(/^Analysis completed:?.*$/im, '').trim()
         cleanContent = cleanContent.replace(/https?:\/\/[^\s]+/g, '').trim()
@@ -367,9 +410,7 @@ export default function HydrologyDarkChat() {
       }
     }
 
-    if (!cleanContent || cleanContent.trim() === '') {
-      cleanContent = ''
-    }
+    if (!cleanContent || cleanContent.trim() === '') cleanContent = ''
 
     const hasStaticUrl = !!(r?.static_url)
     const hasOverlayUrl = !!(r?.overlay_url)
@@ -377,38 +418,22 @@ export default function HydrologyDarkChat() {
     let hasGeoJsonData = !!(r?.geojson?.features?.length > 0)
 
     const isAnimation = (
-      r?.type === 'animation' ||
-      r?.metadata?.computation_type === 'animation' ||
-      r?.media_type === 'gif' ||
-      isGifUrl(r?.static_url) ||
-      isGifUrl(r?.overlay_url)
+      r?.type === 'animation' || r?.metadata?.computation_type === 'animation' ||
+      r?.media_type === 'gif' || isGifUrl(r?.static_url) || isGifUrl(r?.overlay_url)
     )
-
-    if (isAnimation) {
-      console.log('🎞️ Animation/GIF detected via isGifUrl helper')
-    }
+    if (isAnimation) console.log('🎞️ Animation/GIF detected via isGifUrl helper')
 
     if (hasGeoJsonData) {
       r.geojson.features = r.geojson.features
         .filter((f: any) => {
-          const lat = f.geometry?.coordinates?.[1]
-          const lng = f.geometry?.coordinates?.[0]
+          const lat = f.geometry?.coordinates?.[1]; const lng = f.geometry?.coordinates?.[0]
           const value = f.properties?.value ?? f.properties?.spi ?? f.properties?.temperature ?? f.properties?.spi_value
           return isFinite(lat) && isFinite(lng) && isFinite(value)
         })
         .map((f: any) => {
           const value = f.properties?.value ?? f.properties?.spi ?? f.properties?.temperature ?? f.properties?.spi_value
           const variable = f.properties?.variable || 'spi'
-          return {
-            ...f,
-            properties: {
-              ...f.properties,
-              value: value,
-              variable: variable,
-              unit: getVariableUnit(variable),
-              displayName: getDisplayName(variable)
-            }
-          }
+          return { ...f, properties: { ...f.properties, value, variable, unit: getVariableUnit(variable), displayName: getDisplayName(variable) } }
         })
       hasGeoJsonData = r.geojson.features.length > 0
     }
@@ -422,32 +447,28 @@ export default function HydrologyDarkChat() {
       r?.use_tiles === false ||
       (!r?.bounds && !r?.map_config && hasStaticUrl) ||
       /recovery|flash drought/i.test(currentQuery)
-  )
+    )
 
     let imageUrl = null
     let mapData: MapData | undefined
 
     if (isAnimation && hasStaticUrl) {
       console.log('🎞️ Animation detected (GIF) — showing static image only, no Azure map')
-      imageUrl = r.static_url
-      mapData = undefined
-      
+      imageUrl = r.static_url; mapData = undefined
       if (!cleanContent || cleanContent.length < 10) {
         const region = r?.metadata?.region || r?.region || ''
         const dateRange = r?.metadata?.date || r?.date || ''
-        const variable = r?.metadata?.variable || r?.variable || 'data'
-        cleanContent = `Here's the animation showing ${variable.replace(/_/g, ' ')}${region ? ` for ${region.replace(/_/g, ' ')}` : ''}${dateRange ? ` (${dateRange})` : ''}.`
+        const v = r?.metadata?.variable || r?.variable || 'data'
+        cleanContent = `Here's the animation showing ${v.replace(/_/g, ' ')}${region ? ` for ${region.replace(/_/g, ' ')}` : ''}${dateRange ? ` (${dateRange})` : ''}.`
       }
     }
     else if (isSimpleVisualization && hasStaticUrl) {
       console.log('📊 Simple visualization detected — using static image only')
-      imageUrl = r.static_url
-      mapData = undefined
-      
+      imageUrl = r.static_url; mapData = undefined
       if (!cleanContent || cleanContent.length < 10) {
         const region = r?.metadata?.region || r?.region || ''
-        const variable = r?.metadata?.variable || r?.variable || 'data'
-        cleanContent = `Here's the visualization${variable ? ` of ${variable.replace(/_/g, ' ')}` : ''}${region ? ` for ${region.replace(/_/g, ' ')}` : ''}.`
+        const v = r?.metadata?.variable || r?.variable || 'data'
+        cleanContent = `Here's the visualization${v ? ` of ${v.replace(/_/g, ' ')}` : ''}${region ? ` for ${region.replace(/_/g, ' ')}` : ''}.`
       }
     }
     else if ((hasStaticUrl || hasOverlayUrl || hasGeoJsonData || hasGeoTiffUrl) && !isSimpleVisualization) {
@@ -457,98 +478,52 @@ export default function HydrologyDarkChat() {
       if (r.bounds && isFinite(r.bounds.north) && isFinite(r.bounds.south) && 
           isFinite(r.bounds.east) && isFinite(r.bounds.west)) {
         mapBounds = r.bounds
-      } 
-      else if (hasGeoJsonData) {
+      } else if (hasGeoJsonData) {
         const validCoords = r.geojson.features
-          .map((f: any) => ({
-            lat: f.geometry.coordinates[1],
-            lng: f.geometry.coordinates[0]
-          }))
+          .map((f: any) => ({ lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] }))
           .filter((coord: any) => isFinite(coord.lat) && isFinite(coord.lng))
-        
         if (validCoords.length > 0) {
           const lats = validCoords.map((c: any) => c.lat)
           const lngs = validCoords.map((c: any) => c.lng)
-          mapBounds = {
-            north: Math.max(...lats), 
-            south: Math.min(...lats),
-            east: Math.max(...lngs), 
-            west: Math.min(...lngs)
-          }
+          mapBounds = { north: Math.max(...lats), south: Math.min(...lats), east: Math.max(...lngs), west: Math.min(...lngs) }
         }
       }
-      
-      if (!mapBounds) {
-        mapBounds = getMapBounds(currentQuery)
-      }
-      
-      if (!mapCenter && mapBounds) {
-        mapCenter = [
-          (mapBounds.west + mapBounds.east) / 2, 
-          (mapBounds.north + mapBounds.south) / 2
-        ]
-      }
+      if (!mapBounds) mapBounds = getMapBounds(currentQuery)
+      if (!mapCenter && mapBounds) mapCenter = [(mapBounds.west + mapBounds.east) / 2, (mapBounds.north + mapBounds.south) / 2]
       
       const latPadding = mapBounds ? Math.abs(mapBounds.north - mapBounds.south) * 0.02 : 0.5
       const lngPadding = mapBounds ? Math.abs(mapBounds.east - mapBounds.west) * 0.02 : 0.5
-
       const paddedBounds = mapBounds ? {
-        north: mapBounds.north + latPadding, 
-        south: mapBounds.south - latPadding,
-        east: mapBounds.east + lngPadding, 
-        west: mapBounds.west - lngPadding
+        north: mapBounds.north + latPadding, south: mapBounds.south - latPadding,
+        east: mapBounds.east + lngPadding, west: mapBounds.west - lngPadding
       } : getMapBounds(currentQuery)
-
-      const center = mapCenter ? { 
-        lat: mapCenter[1], 
-        lng: mapCenter[0] 
-      } : {
-        lat: (paddedBounds.north + paddedBounds.south) / 2,
-        lng: (paddedBounds.east + paddedBounds.west) / 2
+      const center = mapCenter ? { lat: mapCenter[1], lng: mapCenter[0] } : {
+        lat: (paddedBounds.north + paddedBounds.south) / 2, lng: (paddedBounds.east + paddedBounds.west) / 2
       }
       
       mapData = {
         map_url: r.overlay_url || r.static_url || '',
-        bounds: paddedBounds,
-        center: center,
-        zoom: r.map_config?.zoom || 9,
+        bounds: paddedBounds, center, zoom: r.map_config?.zoom || 9,
         azureData: {
-          static_url: r.static_url,
-          overlay_url: r.overlay_url,
-          geotiff_url: r.geotiff_url,
-          temperature_data: r.temperature_data || [],
-          geojson: r.geojson,
-          bounds: mapBounds,
-          map_config: r.map_config,
-          use_tiles: r.use_tiles,
-          tile_config: r.tile_config,
-          variable_info: {
-            name: variable,
-            unit: getVariableUnit(variable),
-            displayName: getDisplayName(variable)
-          },
-          data_type: 'unified_backend',
-          raw_response: r
+          static_url: r.static_url, overlay_url: r.overlay_url, geotiff_url: r.geotiff_url,
+          temperature_data: r.temperature_data || [], geojson: r.geojson,
+          bounds: mapBounds, map_config: r.map_config,
+          use_tiles: r.use_tiles, tile_config: r.tile_config,
+          variable_info: { name: variable, unit: getVariableUnit(variable), displayName: getDisplayName(variable) },
+          data_type: 'unified_backend', raw_response: r
         }
       }
-      
       imageUrl = r.static_url
-    } 
-    else {
+    } else {
       imageUrl = r?.content?.match(/https?:\/\/[^\s]+/)?.[0] || null
     }
 
-    if (markdownExtractedUrl && !r?.static_url) {
-      imageUrl = markdownExtractedUrl
-    }
+    if (markdownExtractedUrl && !r?.static_url) imageUrl = markdownExtractedUrl
 
     const allViz = r?.all_visualizations
     let allImageUrls: string[] = []
-    
     if (Array.isArray(allViz) && allViz.length > 1) {
-      allImageUrls = allViz
-        .map((v: any) => v.static_url)
-        .filter((url: string) => url && typeof url === 'string' && url.startsWith('http'))
+      allImageUrls = allViz.map((v: any) => v.static_url).filter((url: string) => url && typeof url === 'string' && url.startsWith('http'))
       console.log(`📊 Multiple visualizations detected: ${allImageUrls.length} images`)
     }
 
@@ -570,8 +545,7 @@ export default function HydrologyDarkChat() {
     e?.preventDefault()
     if (!query.trim()) return
 
-    const startTime = performance.now()  // ⏱️ START TIMER
-
+    const startTime = performance.now()
     const userMsg: Message = { id: String(Date.now()), role: 'user', text: query }
     setMessages((prev) => [...prev, userMsg])
     const currentQuery = query
@@ -582,91 +556,59 @@ export default function HydrologyDarkChat() {
 
     try {
       console.log('Sending request to backend with query:', userMsg.text)
-      
       let r: any
 
       if (USE_STREAMING) {
         console.log('🌊 Using streaming endpoint...')
-        
         try {
           const streamResult = await sendStreamingQuery(currentQuery, userId, threadId)
           r = streamResult?.result || streamResult
           console.log('🌊 Stream result:', r)
         } catch (streamError: any) {
           console.warn('⚠️ Streaming failed, falling back to regular endpoint:', streamError)
-          const resp = await callMultiAgentFunction({ 
-            action: 'generate', 
-            data: { 
-              query: userMsg.text,
-              user_id: userId,
-              thread_id: threadId
-            } 
-          })
+          const resp = await callMultiAgentFunction({ action: 'generate', data: { query: userMsg.text, user_id: userId, thread_id: threadId } })
           r = resp.response
         }
       } else {
-        const resp = await callMultiAgentFunction({ 
-          action: 'generate', 
-          data: { 
-            query: userMsg.text,
-            user_id: userId,
-            thread_id: threadId
-          } 
-        })
+        const resp = await callMultiAgentFunction({ action: 'generate', data: { query: userMsg.text, user_id: userId, thread_id: threadId } })
         r = resp.response
       }
       
       console.log('Raw backend response:', r)
-      
-      if (r?.thread_id) {
-        setThreadId(r.thread_id)
-        console.log('💾 Stored thread_id:', r.thread_id.substring(0, 12) + '...')
-      }
+      if (r?.thread_id) { setThreadId(r.thread_id); console.log('💾 Stored thread_id:', r.thread_id.substring(0, 12) + '...') }
 
       let hasError = false
       let errorMessage = ''
 
       if (r?.status === 'error') {
-        hasError = true
-        errorMessage = r?.error || r?.analysis_data?.error || 'An error occurred during analysis'
-        console.log('❌ Hard error detected:', errorMessage)
+        hasError = true; errorMessage = r?.error || r?.analysis_data?.error || 'An error occurred during analysis'
       } else if (r?.analysis_data?.status === 'error' && !r?.content && !r?.agent_response) {
-        hasError = true
-        errorMessage = r?.analysis_data?.error || 'An error occurred during analysis'
-        console.log('❌ Analysis error with no recovery text:', errorMessage)
+        hasError = true; errorMessage = r?.analysis_data?.error || 'An error occurred during analysis'
       } else if (r?.analysis_data?.status === 'error' && (r?.content || r?.agent_response)) {
         console.log('⚠️ Analysis had error but agent recovered:', r?.analysis_data?.error)
-        console.log('✅ Showing agent recovery text instead')
       }
 
       if (hasError) {
-        const elapsedMs = Math.round(performance.now() - startTime)  // ⏱️ STOP TIMER
+        const elapsedMs = Math.round(performance.now() - startTime)
         const errorMsg: Message = {
-          id: String(Date.now() + 1),
-          role: 'assistant',
+          id: String(Date.now() + 1), role: 'assistant',
           text: `⚠️ Error: ${errorMessage}\n\n${r?.analysis_data?.suggestion ? `💡 Suggestion: ${r.analysis_data.suggestion}` : ''}`,
-          elapsedMs: elapsedMs
+          elapsedMs
         }
         setMessages((prev) => [...prev, errorMsg])
-        setDebug((r?.debug ?? r) || null)
-        setLoading(false)
+        setDebug((r?.debug ?? r) || null); setLoading(false)
         console.log(`⏱️ Query failed in ${(elapsedMs / 1000).toFixed(1)}s`)
         return
       }
 
-      // Process the response
       const { cleanContent, imageUrl, mapData, allImageUrls } = processResponse(r, currentQuery)
-
-      const elapsedMs = Math.round(performance.now() - startTime)  // ⏱️ STOP TIMER
+      const elapsedMs = Math.round(performance.now() - startTime)
 
       const assistantMsg: Message = {
-        id: String(Date.now() + 1),
-        role: 'assistant',
-        text: cleanContent,
+        id: String(Date.now() + 1), role: 'assistant', text: cleanContent,
         imageUrl: allImageUrls && allImageUrls.length > 1 ? undefined : imageUrl,
-        mapData: mapData,
-        allImageUrls: allImageUrls && allImageUrls.length > 1 ? allImageUrls : undefined,
-        elapsedMs: elapsedMs  // ⏱️ ATTACH TIMING
+        mapData, allImageUrls: allImageUrls && allImageUrls.length > 1 ? allImageUrls : undefined,
+        elapsedMs
       }
 
       setMessages((prev) => [...prev, assistantMsg])
@@ -675,14 +617,9 @@ export default function HydrologyDarkChat() {
       
     } catch (err: any) {
       console.error('Query failed:', err)
-      const elapsedMs = Math.round(performance.now() - startTime)  // ⏱️ STOP TIMER
+      const elapsedMs = Math.round(performance.now() - startTime)
       setError(`Connection failed: ${err?.message || 'Unknown error'}`)
-      setMessages((prev) => [...prev, { 
-        id: String(Date.now()), 
-        role: 'assistant', 
-        text: `Request failed: ${err?.message || 'Backend connection error'}`,
-        elapsedMs: elapsedMs
-      }])
+      setMessages((prev) => [...prev, { id: String(Date.now()), role: 'assistant', text: `Request failed: ${err?.message || 'Backend connection error'}`, elapsedMs }])
       console.log(`⏱️ Query errored in ${(elapsedMs / 1000).toFixed(1)}s`)
     } finally {
       setLoading(false)
@@ -690,9 +627,7 @@ export default function HydrologyDarkChat() {
   }
 
   return (
-    <div className="min-h-screen text-white flex flex-col" style={{ 
-      background: '#000000'
-    }}>
+    <div className="min-h-screen text-white flex flex-col" style={{ background: '#000000' }}>
       {/* Header with integrated logos */}
       <div className="relative w-full overflow-hidden" style={{ height: '220px', background: '#000000' }}>
         <div className="absolute inset-0 z-0" style={{ background: '#000000' }}>
@@ -700,17 +635,9 @@ export default function HydrologyDarkChat() {
             src="/total.svg" 
             alt="Hydrology Cycle with NASA and Microsoft logos" 
             className="w-full h-full object-cover object-left"
-            style={{
-              animation: 'float 6s ease-in-out infinite',
-              background: '#000000'
-            }}
-            onError={(e) => {
-              console.error('❌ Failed to load /total.svg')
-              e.currentTarget.style.display = 'none'
-            }}
-            onLoad={() => {
-              console.log('✅ Successfully loaded /total.svg')
-            }}
+            style={{ animation: 'float 6s ease-in-out infinite', background: '#000000' }}
+            onError={(e) => { console.error('❌ Failed to load /total.svg'); e.currentTarget.style.display = 'none' }}
+            onLoad={() => { console.log('✅ Successfully loaded /total.svg') }}
           />
         </div>
         
@@ -736,12 +663,9 @@ export default function HydrologyDarkChat() {
       <div className="flex-1 flex flex-col mx-auto w-full px-4">
         <div 
           className="flex-1 overflow-y-auto py-6 mb-32" 
-          style={{ 
-            minHeight: '350px',
-            maxHeight: 'calc(100vh - 350px)' 
-          }}
+          style={{ minHeight: '350px', maxHeight: 'calc(100vh - 350px)' }}
         >
-          <div className="max-w-3xl mx-auto space-y-4">
+          <div ref={chatContainerRef} data-export-id="chat" className="max-w-3xl mx-auto space-y-4">
             {messages.length === 0 && !loading && (
               <div className="text-center py-12">
                 <p className="text-gray-400 text-lg mb-2">Ask a question to get started</p>
@@ -782,7 +706,8 @@ export default function HydrologyDarkChat() {
                     {m.mapData && (
                       <div className="bg-black border border-gray-800 rounded-2xl rounded-tl-sm px-5 py-3">
                         <div className="text-sm font-semibold text-gray-300 mb-2">🗺️ Interactive Map:</div>
-                        <div className="rounded-lg overflow-hidden border border-gray-700">
+                        {/* Interactive map - hidden during PDF export */}
+                        <div className="rounded-lg overflow-hidden border border-gray-700" data-export-hide="true">
                           <AzureMapView 
                             mapData={m.mapData} 
                             subscriptionKey={AZURE_MAPS_KEY || ''}
@@ -790,6 +715,17 @@ export default function HydrologyDarkChat() {
                             height="400px"
                           />
                         </div>
+                        {/* Static map for PDF export - hidden in browser */}
+                        {m.mapData.azureData?.static_url && (
+                          <img 
+                            src={m.mapData.azureData.static_url}
+                            alt="Map export"
+                            crossOrigin="anonymous"
+                            data-export-show="true"
+                            className="rounded-lg w-full"
+                            style={{ display: 'none' }}
+                          />
+                        )}
                         <p className="text-xs text-gray-400 mt-2">
                           Click points for details
                         </p>
@@ -811,17 +747,13 @@ export default function HydrologyDarkChat() {
                       <div className="grid grid-cols-1 gap-4">
                         {m.allImageUrls.map((url, idx) => (
                           <img 
-                            key={idx}
-                            src={url} 
-                            alt={`Analysis ${idx + 1}`} 
+                            key={idx} src={url} alt={`Analysis ${idx + 1}`} 
                             className="rounded-lg w-full cursor-pointer hover:opacity-90 transition-opacity"
                             onClick={() => window.open(url, '_blank')}
                           />
                         ))}
                       </div>
-                      <p className="text-xs text-gray-400 mt-2">
-                        Click any image to view full size
-                      </p>
+                      <p className="text-xs text-gray-400 mt-2">Click any image to view full size</p>
                     </div>
                   </div>
                 )}
@@ -834,7 +766,12 @@ export default function HydrologyDarkChat() {
                       : 'bg-black border border-gray-800 text-gray-100 rounded-2xl rounded-tl-sm'
                   } px-5 py-3`}>
                     {m.text && <div className="whitespace-pre-wrap mb-4">{m.text}</div>}
-                    <img src={m.imageUrl} alt="Result" className="rounded-lg w-full" />
+                    <div className="relative">
+                      <img src={m.imageUrl} alt="Result" className="rounded-lg w-full" />
+                      <a href={m.imageUrl} download target="_blank" rel="noopener noreferrer" title="Download map as PNG" className="absolute top-3 right-3 bg-black/70 hover:bg-black/90 text-white p-2 rounded-md transition-all backdrop-blur-sm border border-white/10 hover:border-white/20">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      </a>
+                    </div>
                     {m.role === 'assistant' && <TimerBadge elapsedMs={m.elapsedMs} />}
                   </div>
                 )}
@@ -874,6 +811,15 @@ export default function HydrologyDarkChat() {
                 {isStreaming && <span className="text-purple-400 ml-2">● Streaming</span>}
               </div>
             )}
+
+            <button
+              onClick={handleExportPDF}
+              disabled={messages.length === 0 || exporting}
+              className="px-3 py-1.5 text-xs bg-black hover:bg-black text-gray-300 border border-gray-800 rounded-lg transition-all duration-200 hover:border-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Export conversation to PDF"
+            >
+              {exporting ? '⏳ Exporting...' : '📄 Export PDF'}
+            </button>
             
             <button
               onClick={handleNewConversation}
@@ -938,12 +884,7 @@ export default function HydrologyDarkChat() {
               <div className="p-4 bg-black border border-gray-800 rounded-lg">
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-sm text-gray-400">Debug Information</span>
-                  <button 
-                    onClick={() => setShowDebug(false)}
-                    className="text-gray-500 hover:text-gray-300"
-                  >
-                    ✕
-                  </button>
+                  <button onClick={() => setShowDebug(false)} className="text-gray-500 hover:text-gray-300">✕</button>
                 </div>
                 <pre className="text-xs text-gray-300 overflow-auto max-h-48">
                   {JSON.stringify(debug, null, 2)}
@@ -953,6 +894,17 @@ export default function HydrologyDarkChat() {
           </div>
         )}
       </div>
+
+      {/* PDF Export overlay */}
+      {exporting && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[9999]">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl px-10 py-8 text-center">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-500 mx-auto mb-4"></div>
+            <p className="text-white text-lg font-medium">Exporting to PDF...</p>
+            <p className="text-gray-400 text-sm mt-2">Capturing maps and conversation</p>
+          </div>
+        </div>
+      )}
 
       <style>{`
         @keyframes float {

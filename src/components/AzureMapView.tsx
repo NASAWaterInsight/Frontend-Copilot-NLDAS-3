@@ -49,21 +49,24 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
   const useTilesFlag = mapData?.azureData?.use_tiles === true
   const staticUrl = mapData?.azureData?.static_url
   const hasValidTileConfig = !!(mapData?.azureData?.tile_config?.tile_url)
+  const hasGeoJsonPoints = !!(mapData?.azureData?.geojson?.features?.length > 0)
 
   // Should we attempt Azure Maps initialization?
+  // Init when we have tiles OR when we have GeoJSON hover points
   const shouldInitMap = (
     hasRealMapData &&
     !isGif &&
-    useTilesFlag &&
-    hasValidTileConfig &&
+    ((useTilesFlag && hasValidTileConfig) || hasGeoJsonPoints) &&
     !!subscriptionKey
   )
 
-  // Should we show static image directly (no tiles requested)?
+  // Should we show static image directly (no map needed)?
+  // Only when no tiles AND no GeoJSON points
   const shouldShowStatic = (
     hasRealMapData &&
     !isGif &&
     !useTilesFlag &&
+    !hasGeoJsonPoints &&
     typeof staticUrl === 'string' &&
     staticUrl.startsWith('http')
   )
@@ -134,6 +137,7 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
         const hasGeoJsonData = !!(mapData.azureData?.geojson?.features?.length > 0)
         const requestedBounds = mapData.azureData?.bounds || mapData.bounds || bounds
 
+        // Always add static overlay first as background
         if (useTilesFlag && tileConfig && tileConfig.tile_list && Array.isArray(tileConfig.tile_list)) {
           console.log(`🎯 Loading ${tileConfig.tile_list.length} backend tiles`)
           loadBackendTiles(map, tileConfig.tile_list)
@@ -264,7 +268,6 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
   )
 
   const showColorbar = hasValidColorScale && useTilesFlag && mapReady
-
   // ═══ TILE MAP RENDERING ═══
   return (
     <div className="flex w-full relative" style={{ height }}>
@@ -278,23 +281,19 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
           display: mapReady ? 'block' : 'none'
         }}
       />
+      {/* Download static map button — overlays interactive map, clear of colorbar */}
+      {staticUrl && mapReady && (
+        <a href={staticUrl} download target="_blank" rel="noopener noreferrer" title="Download static map (PNG)" className="absolute top-3 z-10 bg-black/70 hover:bg-black/90 text-white p-2 rounded-md transition-all backdrop-blur-sm border border-white/10 hover:border-white/20" style={{ right: showColorbar ? '152px' : '12px' }}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </a>
+      )}
 
-      {/* Static image fallback — shown while map is loading */}
-      {!mapReady && !mapError && staticUrl && (
+      {/* Loading spinner — shown while map is loading */}
+      {!mapReady && !mapError && (
         <div className="flex justify-center items-center w-full absolute inset-0" style={{ height }}>
-          <img
-            src={staticUrl}
-            alt="Loading map..."
-            style={{
-              maxHeight: height,
-              maxWidth: '100%',
-              objectFit: 'contain',
-              borderRadius: '8px',
-              opacity: 0.8
-            }}
-          />
-          <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 bg-black/70 text-white text-xs px-3 py-1 rounded-full">
-            Loading interactive map...
+          <div className="flex flex-col items-center gap-2">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500"></div>
+            <span className="text-gray-400 text-xs">Loading interactive map...</span>
           </div>
         </div>
       )}
@@ -309,6 +308,12 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
             variable={tileConfig.color_scale.variable || 'value'}
             unit={tileConfig.color_scale.unit || ''}
             colors={tileConfig.color_scale.colors}
+            colorbarLabel={
+              // Prefer backend's explicit colorbar_label, fall back to legacy fields
+              mapData?.azureData?.metadata?.colorbar_label
+              || tileConfig.color_scale?.colorbar_label
+              || undefined
+            }
           />
         </div>
       )}

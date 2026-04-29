@@ -7,6 +7,7 @@ interface ColorbarLegendProps {
   variable: string
   unit: string
   colors?: string[]
+  colorbarLabel?: string
 }
 
 export default function ColorbarLegend({ 
@@ -15,7 +16,8 @@ export default function ColorbarLegend({
   cmap, 
   variable, 
   unit,
-  colors 
+  colors,
+  colorbarLabel,
 }: ColorbarLegendProps) {
 
   const getGradientCSS = (colormapName: string, colorArray?: string[]): string => {
@@ -74,6 +76,7 @@ export default function ColorbarLegend({
       'SoilT_10_40cm': 'Soil Temp (10-40cm)',
       'SoilT_40_100cm': 'Soil Temp (40-100cm)',
       'SoilT_100_200cm': 'Soil Temp (100-200cm)',
+      'SoilM_root_zone': 'Root-Zone SM (0-100cm)',
       'AvgSurfT': 'Surface Temp',
       'Qle': 'Latent Heat',
       'Qh': 'Sensible Heat',
@@ -101,12 +104,25 @@ export default function ColorbarLegend({
   return (
     <div className="flex flex-col items-center justify-center h-full px-3 py-4 bg-black border-l border-gray-700">
       <div className="text-center mb-3">
-        <div className="text-xs font-semibold text-gray-300 whitespace-nowrap">
-          {getDisplayName()}
-        </div>
-        <div className="text-xs text-gray-400 whitespace-nowrap">
-          {unit && `(${unit})`}
-        </div>
+        {colorbarLabel ? (
+          // NEW: Use the pre-formatted label from backend (e.g., "ET Anomaly (mm/day)")
+          // This is the single source of truth, kept in sync with the matplotlib colorbar
+          <div className="text-xs font-semibold text-gray-300 whitespace-nowrap" 
+              style={{ maxWidth: '120px', whiteSpace: 'normal', textAlign: 'center' }}>
+            {colorbarLabel}
+          </div>
+        ) : (
+          // FALLBACK: Legacy behavior — variable lookup + separate unit
+          // Used when backend hasn't provided colorbar_label (older code paths)
+          <>
+            <div className="text-xs font-semibold text-gray-300 whitespace-nowrap">
+              {getDisplayName()}
+            </div>
+            <div className="text-xs text-gray-400 whitespace-nowrap">
+              {unit && `(${unit})`}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="relative flex items-center">
