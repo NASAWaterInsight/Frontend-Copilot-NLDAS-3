@@ -458,8 +458,9 @@ export default function HydrologyDarkChat() {
       if (!cleanContent || cleanContent.length < 10) {
         const region = r?.metadata?.region || r?.region || ''
         const dateRange = r?.metadata?.date || r?.date || ''
-        const v = r?.metadata?.variable || r?.variable || 'data'
-        cleanContent = `Here's the animation showing ${v.replace(/_/g, ' ')}${region ? ` for ${region.replace(/_/g, ' ')}` : ''}${dateRange ? ` (${dateRange})` : ''}.`
+        const vRaw = r?.metadata?.variable || r?.variable || 'data'
+        const v = Array.isArray(vRaw) ? vRaw.join(', ') : String(vRaw)
+        cleanContent = `Here's the visualization${v ? ` of ${v.replace(/_/g, ' ')}` : ''}${region ? ` for ${region.replace(/_/g, ' ')}` : ''}.`
       }
     }
     else if (isSimpleVisualization && hasStaticUrl) {
@@ -467,7 +468,8 @@ export default function HydrologyDarkChat() {
       imageUrl = r.static_url; mapData = undefined
       if (!cleanContent || cleanContent.length < 10) {
         const region = r?.metadata?.region || r?.region || ''
-        const v = r?.metadata?.variable || r?.variable || 'data'
+        const vRaw = r?.metadata?.variable || r?.variable || 'data'
+        const v = Array.isArray(vRaw) ? vRaw.join(', ') : String(vRaw)
         cleanContent = `Here's the visualization${v ? ` of ${v.replace(/_/g, ' ')}` : ''}${region ? ` for ${region.replace(/_/g, ' ')}` : ''}.`
       }
     }
@@ -768,7 +770,7 @@ export default function HydrologyDarkChat() {
                     {m.text && <div className="whitespace-pre-wrap mb-4">{m.text}</div>}
                     <div className="relative">
                       <img src={m.imageUrl} alt="Result" className="rounded-lg w-full" />
-                      <a href={m.imageUrl} download target="_blank" rel="noopener noreferrer" title="Download map as PNG" className="absolute top-3 right-3 bg-black/70 hover:bg-black/90 text-white p-2 rounded-md transition-all backdrop-blur-sm border border-white/10 hover:border-white/20">
+                      <a href={m.imageUrl} download target="_blank" rel="noopener noreferrer" title="Download map as PNG" className="absolute top-3 left-3 bg-black/70 hover:bg-black/90 text-white p-2 rounded-md transition-all backdrop-blur-sm border border-white/10 hover:border-white/20">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                       </a>
                     </div>
