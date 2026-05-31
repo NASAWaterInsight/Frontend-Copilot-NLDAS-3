@@ -265,7 +265,20 @@ export default function HydrologyDarkChat() {
       'PSurf': 'Surface Pressure',
       'corn_yield': 'Corn Yield',
       'SnowFrac': 'Snow Cover Fraction',
-      'CanopInt': 'Canopy Interception'
+      'CanopInt': 'Canopy Interception',
+      // CZDT flood variables — needed so the legend fallback shows
+      // human-friendly names when the backend metadata is missing.
+      'FloodedFrac_tavg': 'Flooded Fraction',
+      'SurfElev_tavg': 'Surface Water Elevation',
+      'SWS_tavg': 'Surface Water Storage',
+      'FloodStor_tavg': 'Floodplain Water Storage',
+      'RiverStor_tavg': 'River Water Storage',
+      'RiverDepth_tavg': 'River Depth',
+      'Streamflow_tavg': 'Streamflow',
+      'FloodQ_tavg': 'Floodplain Discharge',
+      'FloodVelocity_tavg': 'Floodplain Flow Velocity',
+      'RiverFlowVelocity_tavg': 'River Flow Velocity',
+      'flood_fraction': 'Flood Fraction'
     }
     return variableMap[variable] || variable.replace(/_/g, ' ')
   }
@@ -287,7 +300,19 @@ export default function HydrologyDarkChat() {
       'TWS': 'mm', 'GWS': 'mm', 'WaterTableD': 'm', 'CanopInt': 'kg/m²',
       'LWnet': 'W/m²', 'SWnet': 'W/m²', 'Qh': 'W/m²', 'Qle': 'W/m²', 'Qg': 'W/m²',
       'LWdown': 'W/m²', 'SWdown': 'W/m²', 'PSurf': 'Pa',
-      'corn_yield': 'kg/ha'
+      'corn_yield': 'kg/ha',
+      // CZDT flood variables
+      'FloodedFrac_tavg': '',
+      'SurfElev_tavg': 'm',
+      'SWS_tavg': 'mm',
+      'FloodStor_tavg': 'm³',
+      'RiverStor_tavg': 'm³',
+      'RiverDepth_tavg': 'm',
+      'Streamflow_tavg': 'm³/s',
+      'FloodQ_tavg': 'm³/s',
+      'FloodVelocity_tavg': 'm/s',
+      'RiverFlowVelocity_tavg': 'm/s',
+      'flood_fraction': ''
     }
     return unitMap[variable] || ''
   }
@@ -438,7 +463,10 @@ export default function HydrologyDarkChat() {
       hasGeoJsonData = r.geojson.features.length > 0
     }
 
-    const variable = r?.variable || 'temperature'
+    // Pick the variable name from the richest source available. Backend
+    // `metadata.variable` is the authoritative one when present (CZDT flood
+    // sets this); legacy responses fall through to `r.variable`.
+    const variable = r?.metadata?.variable || r?.variable || 'temperature'
 
     const isSimpleVisualization = (
       r?.type === "simple_visualization" || 
@@ -507,12 +535,25 @@ export default function HydrologyDarkChat() {
         map_url: r.overlay_url || r.static_url || '',
         bounds: paddedBounds, center, zoom: r.map_config?.zoom || 9,
         azureData: {
-          static_url: r.static_url, overlay_url: r.overlay_url, geotiff_url: r.geotiff_url,
-          temperature_data: r.temperature_data || [], geojson: r.geojson,
-          bounds: mapBounds, map_config: r.map_config,
-          use_tiles: r.use_tiles, tile_config: r.tile_config,
+          static_url: r.static_url,
+          overlay_url: r.overlay_url,
+          geotiff_url: r.geotiff_url,
+          temperature_data: r.temperature_data || [],
+          geojson: r.geojson,
+          bounds: mapBounds,
+          map_config: r.map_config,
+          use_tiles: r.use_tiles,
+          tile_config: r.tile_config,
+          // Forward the top-level metadata block so AzureMapView /
+          // ColorbarLegend can read colorbar_label, variable, units
+          // directly. This is what fixes the legend showing "value"
+          // for CZDT flood-agent INTENT K (anomaly/percentile/zscore)
+          // results, where the backend puts the rich labels in
+          // metadata rather than inside color_scale.
+          metadata: r.metadata,
           variable_info: { name: variable, unit: getVariableUnit(variable), displayName: getDisplayName(variable) },
-          data_type: 'unified_backend', raw_response: r
+          data_type: 'unified_backend',
+          raw_response: r
         }
       }
       imageUrl = r.static_url

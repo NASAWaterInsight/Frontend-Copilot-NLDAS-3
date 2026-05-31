@@ -256,8 +256,22 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
     )
   }
 
-  // Colorbar validation
+  // ─────────────────────────────────────────────────────────────
+  // Colorbar resolution
+  //
+  // The backend may deliver colorbar metadata in any of three places:
+  //   1. tile_config.color_scale.{colorbar_label, variable, unit, colors}
+  //      ← preferred / newest shape
+  //   2. tile_config.{colorbar_label, variable}
+  //      ← CZDT flood-agent shape (label at top level of tile_config)
+  //   3. mapData.azureData.metadata.{colorbar_label, variable, units}
+  //      ← canonical metadata block forwarded from the helper
+  //
+  // We try them in order so old and new payloads both render correctly.
+  // ─────────────────────────────────────────────────────────────
   const tileConfig = mapData?.azureData?.tile_config
+  const metaBlock = mapData?.azureData?.metadata
+
   const hasValidColorScale = !!(
     tileConfig?.color_scale &&
     typeof tileConfig.color_scale.vmin === 'number' &&
@@ -266,6 +280,24 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
     isFinite(tileConfig.color_scale.vmax) &&
     tileConfig.color_scale.vmax > tileConfig.color_scale.vmin
   )
+
+  const resolvedColorbarLabel: string | undefined =
+    tileConfig?.color_scale?.colorbar_label
+    || tileConfig?.colorbar_label
+    || metaBlock?.colorbar_label
+    || undefined
+
+  const resolvedVariable: string =
+    tileConfig?.color_scale?.variable
+    || tileConfig?.variable
+    || metaBlock?.variable
+    || 'value'
+
+  const resolvedUnit: string =
+    tileConfig?.color_scale?.unit
+    || metaBlock?.units
+    || metaBlock?.unit
+    || ''
 
   const showColorbar = hasValidColorScale && useTilesFlag && mapReady
   // ═══ TILE MAP RENDERING ═══
@@ -305,15 +337,10 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
             vmin={tileConfig.color_scale.vmin}
             vmax={tileConfig.color_scale.vmax}
             cmap={tileConfig.color_scale.cmap || 'viridis'}
-            variable={tileConfig.color_scale.variable || 'value'}
-            unit={tileConfig.color_scale.unit || ''}
+            variable={resolvedVariable}
+            unit={resolvedUnit}
             colors={tileConfig.color_scale.colors}
-            colorbarLabel={
-              // Prefer backend's explicit colorbar_label, fall back to legacy fields
-              mapData?.azureData?.metadata?.colorbar_label
-              || tileConfig.color_scale?.colorbar_label
-              || undefined
-            }
+            colorbarLabel={resolvedColorbarLabel}
           />
         </div>
       )}
@@ -370,10 +397,18 @@ function loadBackendTiles(map: atlas.Map, tileList: any[]) {
 function addTileLayer(map: atlas.Map, tileConfig: any) {
   if (!tileConfig?.tile_url) return
 
+  // Make the tile URL absolute — Azure Maps TileSource requires a full origin
+  let tileUrlFull = tileConfig.tile_url as string
+  if (tileUrlFull.startsWith('/')) {
+    const apiBase = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'
+    tileUrlFull = apiBase.replace(/\/$/, '') + tileUrlFull
+  }
+  console.log('🗺️ TileSource URL:', tileUrlFull)
+
   try {
     if ((atlas as any).source?.TileSource && (atlas as any).layer?.TileLayer) {
       const source = new (atlas as any).source.TileSource('weather-tiles', {
-        tileUrl: tileConfig.tile_url,
+        tileUrl: tileUrlFull,
         tileSize: tileConfig.tile_size || 256,
         maxZoom: tileConfig.max_zoom || 10,
         minZoom: tileConfig.min_zoom || 3
@@ -467,7 +502,14 @@ function processTemperatureData(map: atlas.Map, temperatureData: any[], variable
   const nameMap: { [k: string]: string } = {
     'Tair': 'Air Temperature', 'temperature': 'Temperature', 'Rainf': 'Precipitation',
     'SPI3': 'Drought Index', 'Wind_Speed': 'Wind Speed', 'VPD': 'VPD',
-    'SoilM_0_10cm': 'Soil Moisture (0-10cm)', 'Evap': 'Evapotranspiration'
+    'SoilM_0_10cm': 'Soil Moisture (0-10cm)', 'Evap': 'Evapotranspiration',
+    // CZDT flood variables
+    'FloodedFrac_tavg': 'Flooded Fraction',
+    'SurfElev_tavg': 'Surface Water Elevation',
+    'SWS_tavg': 'Surface Water Storage',
+    'FloodStor_tavg': 'Floodplain Water Storage',
+    'RiverDepth_tavg': 'River Depth',
+    'Streamflow_tavg': 'Streamflow'
   }
 
   map.events.add('mousemove', (e: any) => {
