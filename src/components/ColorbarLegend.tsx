@@ -8,6 +8,11 @@ interface ColorbarLegendProps {
   unit: string
   colors?: string[]
   colorbarLabel?: string
+  // NEW — categorical (USDM 11-class) support
+  categorical?: boolean
+  classBoundaries?: number[]
+  classLabels?: string[]
+  classColors?: string[]
 }
 
 export default function ColorbarLegend({ 
@@ -18,8 +23,69 @@ export default function ColorbarLegend({
   unit,
   colors,
   colorbarLabel,
+  categorical,
+  classBoundaries,
+  classLabels,
+  classColors,
 }: ColorbarLegendProps) {
 
+  // ─────────────────────────────────────────────────────────────────────
+  // CATEGORICAL BRANCH — USDM 11-class drought/wetness legend
+  // Mirrors the static matplotlib colorbar produced by plot_percentile_result
+  // ─────────────────────────────────────────────────────────────────────
+  if (categorical && classLabels && classColors && classLabels.length === classColors.length) {
+    // Render top → bottom: W4 (wettest) at top, D4 (driest) at bottom — matches the static PNG
+    const reversedLabels = [...classLabels].reverse()
+    const reversedColors = [...classColors].reverse()
+
+    return (
+      <div className="flex flex-col items-center justify-center h-full px-3 py-4 bg-black border-l border-gray-700">
+        <div className="text-center mb-3">
+          <div
+            className="text-xs font-semibold text-gray-300"
+            style={{ maxWidth: '120px', whiteSpace: 'normal', textAlign: 'center' }}
+          >
+            {colorbarLabel || 'Drought / Wetness Category'}
+          </div>
+        </div>
+
+        <div className="flex items-stretch" style={{ height: '280px' }}>
+          {/* Stacked color swatches */}
+          <div className="flex flex-col w-5 rounded border border-gray-600 overflow-hidden">
+            {reversedColors.map((color, idx) => (
+              <div
+                key={`swatch-${idx}`}
+                style={{
+                  flex: 1,
+                  backgroundColor: color,
+                  borderTop: idx === 0 ? 'none' : '1px solid rgba(0,0,0,0.15)',
+                }}
+              />
+            ))}
+          </div>
+
+          {/* Class labels — one per swatch, centered vertically */}
+          <div className="flex flex-col ml-2">
+            {reversedLabels.map((label, idx) => (
+              <div
+                key={`label-${idx}`}
+                className="flex items-center"
+                style={{ flex: 1 }}
+              >
+                <span className="text-xs text-gray-300 whitespace-nowrap font-mono">
+                  {label}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // CONTINUOUS BRANCH — original behavior, unchanged
+  // ─────────────────────────────────────────────────────────────────────
   const getGradientCSS = (colormapName: string, colorArray?: string[]): string => {
     if (colorArray && colorArray.length > 0) {
       console.log(`🎨 Using ${colorArray.length} exact colors from backend for ${colormapName}`)

@@ -96,6 +96,9 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
 
     console.log('Initializing Azure Maps with:', { bounds, center, azureData: mapData.azureData })
 
+    // DEBUG: log color_scale so we can verify categorical metadata is present
+    console.log('🎨 tile_config.color_scale:', mapData.azureData?.tile_config?.color_scale)
+
     let map: atlas.Map
     try {
       map = new atlas.Map(mapRef.current, {
@@ -256,18 +259,34 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
     )
   }
 
-  // Colorbar validation
+  // ═══ COLORBAR VALIDATION ═══
+  // Accepts EITHER continuous (vmin/vmax) OR categorical (class_labels + class_colors)
   const tileConfig = mapData?.azureData?.tile_config
-  const hasValidColorScale = !!(
-    tileConfig?.color_scale &&
-    typeof tileConfig.color_scale.vmin === 'number' &&
-    typeof tileConfig.color_scale.vmax === 'number' &&
-    isFinite(tileConfig.color_scale.vmin) &&
-    isFinite(tileConfig.color_scale.vmax) &&
-    tileConfig.color_scale.vmax > tileConfig.color_scale.vmin
+  const colorScale = tileConfig?.color_scale
+
+  const isCategorical = colorScale?.categorical === true
+
+  const hasValidCategoricalScale = !!(
+    isCategorical &&
+    Array.isArray(colorScale?.class_labels) &&
+    Array.isArray(colorScale?.class_colors) &&
+    colorScale.class_labels.length > 0 &&
+    colorScale.class_labels.length === colorScale.class_colors.length
   )
 
+  const hasValidContinuousScale = !!(
+    !isCategorical &&
+    colorScale &&
+    typeof colorScale.vmin === 'number' &&
+    typeof colorScale.vmax === 'number' &&
+    isFinite(colorScale.vmin) &&
+    isFinite(colorScale.vmax) &&
+    colorScale.vmax > colorScale.vmin
+  )
+
+  const hasValidColorScale = hasValidCategoricalScale || hasValidContinuousScale
   const showColorbar = hasValidColorScale && useTilesFlag && mapReady
+
   // ═══ TILE MAP RENDERING ═══
   return (
     <div className="flex w-full relative" style={{ height }}>
@@ -298,22 +317,27 @@ export default function AzureMapView({ mapData, subscriptionKey, clientId, heigh
         </div>
       )}
 
-      {/* Colorbar */}
-      {showColorbar && hasValidColorScale && (
+      {/* Colorbar — supports both continuous and categorical (USDM 11-class) */}
+      {showColorbar && (
         <div style={{ width: '140px', height }}>
           <ColorbarLegend
-            vmin={tileConfig.color_scale.vmin}
-            vmax={tileConfig.color_scale.vmax}
-            cmap={tileConfig.color_scale.cmap || 'viridis'}
-            variable={tileConfig.color_scale.variable || 'value'}
-            unit={tileConfig.color_scale.unit || ''}
-            colors={tileConfig.color_scale.colors}
+            vmin={colorScale.vmin ?? 0}
+            vmax={colorScale.vmax ?? 100}
+            cmap={colorScale.cmap || 'viridis'}
+            variable={colorScale.variable || 'value'}
+            unit={colorScale.unit || ''}
+            colors={colorScale.colors || colorScale.class_colors}
             colorbarLabel={
               // Prefer backend's explicit colorbar_label, fall back to legacy fields
               mapData?.azureData?.metadata?.colorbar_label
-              || tileConfig.color_scale?.colorbar_label
+              || colorScale?.colorbar_label
               || undefined
             }
+            // NEW — categorical (USDM 11-class) support
+            categorical={isCategorical}
+            classBoundaries={colorScale?.class_boundaries}
+            classLabels={colorScale?.class_labels}
+            classColors={colorScale?.class_colors}
           />
         </div>
       )}
