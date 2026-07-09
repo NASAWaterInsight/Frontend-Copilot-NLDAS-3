@@ -1,4 +1,5 @@
 // src/components/HydrologyDarkChat.tsx
+// WHITE THEME VERSION — all styling converted from black to white background for paper
 import React, { useState, useRef, useEffect } from 'react'
 import { callMultiAgentFunction, testFastAPIConnection } from '../services/multiAgent'
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch'
@@ -107,7 +108,7 @@ export default function HydrologyDarkChat() {
         scale: 2,
         useCORS: true,
         allowTaint: true,
-        backgroundColor: '#000000',
+        backgroundColor: '#FFFFFF',
         logging: false
       })
 
@@ -236,7 +237,9 @@ export default function HydrologyDarkChat() {
       'SoilM_10_40cm': 'Soil Moisture (10-40cm)',
       'SoilM_40_100cm': 'Soil Moisture (40-100cm)',
       'SoilM_100_200cm': 'Soil Moisture (100-200cm)',
-      'SoilM_root_zone': 'Root-Zone Soil Moisture',
+      'SoilM_root_zone': 'Root-Zone Soil Moisture (0-100cm)',
+      'SoilMoisture_root_zone': 'Root-Zone Soil Moisture',  // GPT-4o sometimes uses this
+      'Evapotranspiration': 'Evapotranspiration',
       'VPD': 'Vapor Pressure Deficit',
       'SWE': 'Snow Water Equivalent',
       'SnowDepth': 'Snow Depth',
@@ -245,9 +248,6 @@ export default function HydrologyDarkChat() {
       'SoilT_10_40cm': 'Soil Temp (10-40cm)',
       'SoilT_40_100cm': 'Soil Temp (40-100cm)',
       'SoilT_100_200cm': 'Soil Temp (100-200cm)',
-      'SoilM_root_zone': 'Root-Zone Soil Moisture (0-100cm)',
-      'SoilMoisture_root_zone': 'Root-Zone Soil Moisture',  // GPT-4o sometimes uses this
-      'Evapotranspiration': 'Evapotranspiration',    
       'LAI': 'Leaf Area Index',
       'GPP': 'gC/m²/day',
       'NEE': 'gC/m²/day',
@@ -279,7 +279,7 @@ export default function HydrologyDarkChat() {
       'Evap': 'mm/day', 'PotEvap': 'mm/day', 'ECanop': 'mm/day', 'ESoil': 'mm/day',
       'TVeg': 'mm/day', 'Qs': 'mm/day', 'Qsb': 'mm/day', 'Snowf': 'mm/day',
       'SoilM_0_10cm': 'm³/m³', 'SoilM_10_40cm': 'm³/m³', 'SoilM_40_100cm': 'm³/m³',
-      'SoilM_100_200cm': 'm³/m³', 'SoilM_root_zone': 'm³/m³','SoilM_root_zone': 'm³/m³',
+      'SoilM_100_200cm': 'm³/m³', 'SoilM_root_zone': 'm³/m³',
       'VPD': 'hPa', 'SWE': 'kg/m²', 'SnowDepth': 'cm', 'SnowFrac': '%',
       'AvgSurfT': '°C', 'AvgSurfT_max': '°C', 'AvgSurfT_min': '°C',
       'SoilT_0_10cm': '°C', 'SoilT_10_40cm': '°C', 'SoilT_40_100cm': '°C', 'SoilT_100_200cm': '°C',
@@ -629,15 +629,15 @@ export default function HydrologyDarkChat() {
   }
 
   return (
-    <div className="min-h-screen text-white flex flex-col" style={{ background: '#000000' }}>
+    <div className="min-h-screen text-gray-900 flex flex-col" style={{ background: '#FFFFFF' }}>
       {/* Header with integrated logos */}
-      <div className="relative w-full overflow-hidden" style={{ height: '220px', background: '#000000' }}>
-        <div className="absolute inset-0 z-0" style={{ background: '#000000' }}>
+      <div className="relative w-full overflow-hidden" style={{ height: '220px', background: '#FFFFFF' }}>
+        <div className="absolute inset-0 z-0" style={{ background: '#FFFFFF' }}>
           <img 
             src="/total.svg" 
             alt="Hydrology Cycle with NASA and Microsoft logos" 
             className="w-full h-full object-cover object-left"
-            style={{ animation: 'float 6s ease-in-out infinite', background: '#000000' }}
+            style={{ animation: 'float 6s ease-in-out infinite', background: '#FFFFFF' }}
             onError={(e) => { console.error('❌ Failed to load /total.svg'); e.currentTarget.style.display = 'none' }}
             onLoad={() => { console.log('✅ Successfully loaded /total.svg') }}
           />
@@ -646,13 +646,13 @@ export default function HydrologyDarkChat() {
         <div className="absolute bottom-0 right-0 pr-16 -mb-1 z-50">
           <div className="text-right">
             <h1 className="text-5xl md:text-6xl font-bold mb-2">
-              <span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent block" style={{
-                filter: 'drop-shadow(0 0 20px rgba(0, 0, 0, 1)) drop-shadow(0 0 40px rgba(0, 0, 0, 0.8))'
+              <span className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent block" style={{
+                filter: 'drop-shadow(0 0 20px rgba(255, 255, 255, 1)) drop-shadow(0 0 40px rgba(255, 255, 255, 0.8))'
               }}>
                 Hydrology Copilot
               </span>
-              <span className="text-white text-base font-medium block mt-1" style={{
-                textShadow: '0 0 10px rgba(0, 0, 0, 1), 0 0 20px rgba(0, 0, 0, 0.8), 2px 2px 4px rgba(0, 0, 0, 1)'
+              <span className="text-gray-800 text-base font-medium block mt-1" style={{
+                textShadow: '0 0 10px rgba(255, 255, 255, 1), 0 0 20px rgba(255, 255, 255, 0.8)'
               }}>
                 An AI tool for unlocking hydrological insights
               </span>
@@ -670,8 +670,8 @@ export default function HydrologyDarkChat() {
           <div ref={chatContainerRef} data-export-id="chat" className="max-w-3xl mx-auto space-y-4">
             {messages.length === 0 && !loading && (
               <div className="text-center py-12">
-                <p className="text-gray-400 text-lg mb-2">Ask a question to get started</p>
-                <p className="text-gray-600 text-sm">
+                <p className="text-gray-600 text-lg mb-2">Ask a question to get started</p>
+                <p className="text-gray-400 text-sm">
                   Try: "Show temperature in Michigan" or "Analyze drought conditions in California"
                 </p>
               </div>
@@ -684,7 +684,7 @@ export default function HydrologyDarkChat() {
                   <div className={`max-w-[85%] ${
                     m.role === 'user' 
                       ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl rounded-tr-sm' 
-                      : 'bg-black border border-gray-800 text-gray-100 rounded-2xl rounded-tl-sm'
+                      : 'bg-white border border-gray-300 text-gray-900 rounded-2xl rounded-tl-sm shadow-sm'
                   } px-5 py-3`}>
                     <div className="whitespace-pre-wrap">{m.text}</div>
                     {m.role === 'assistant' && <TimerBadge elapsedMs={m.elapsedMs} />}
@@ -698,7 +698,7 @@ export default function HydrologyDarkChat() {
                       <div className={`max-w-[85%] mb-4 ${
                         m.role === 'user' 
                           ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl rounded-tr-sm ml-auto' 
-                          : 'bg-black border border-gray-800 text-gray-100 rounded-2xl rounded-tl-sm'
+                          : 'bg-white border border-gray-300 text-gray-900 rounded-2xl rounded-tl-sm shadow-sm'
                       } px-5 py-3`}>
                         <div className="whitespace-pre-wrap">{m.text}</div>
                         {m.role === 'assistant' && <TimerBadge elapsedMs={m.elapsedMs} />}
@@ -706,10 +706,10 @@ export default function HydrologyDarkChat() {
                     )}
                     
                     {m.mapData && (
-                      <div className="bg-black border border-gray-800 rounded-2xl rounded-tl-sm px-5 py-3">
-                        <div className="text-sm font-semibold text-gray-300 mb-2">🗺️ Interactive Map:</div>
+                      <div className="bg-white border border-gray-300 rounded-2xl rounded-tl-sm px-5 py-3 shadow-sm">
+                        <div className="text-sm font-semibold text-gray-700 mb-2">🗺️ Interactive Map:</div>
                         {/* Interactive map - hidden during PDF export */}
-                        <div className="rounded-lg overflow-hidden border border-gray-700" data-export-hide="true">
+                        <div className="rounded-lg overflow-hidden border border-gray-300" data-export-hide="true">
                           <AzureMapView 
                             mapData={m.mapData} 
                             subscriptionKey={AZURE_MAPS_KEY || ''}
@@ -728,7 +728,7 @@ export default function HydrologyDarkChat() {
                             style={{ display: 'none' }}
                           />
                         )}
-                        <p className="text-xs text-gray-400 mt-2">
+                        <p className="text-xs text-gray-500 mt-2">
                           Click points for details
                         </p>
                       </div>
@@ -740,12 +740,12 @@ export default function HydrologyDarkChat() {
                 {m.allImageUrls && m.allImageUrls.length > 1 && !m.mapData && (
                   <div className="w-full">
                     {m.text && (
-                      <div className="max-w-[85%] mb-4 bg-black border border-gray-800 text-gray-100 rounded-2xl rounded-tl-sm px-5 py-3">
+                      <div className="max-w-[85%] mb-4 bg-white border border-gray-300 text-gray-900 rounded-2xl rounded-tl-sm px-5 py-3 shadow-sm">
                         <div className="whitespace-pre-wrap">{m.text}</div>
                         <TimerBadge elapsedMs={m.elapsedMs} />
                       </div>
                     )}
-                    <div className="bg-black border border-gray-800 rounded-2xl rounded-tl-sm px-5 py-3">
+                    <div className="bg-white border border-gray-300 rounded-2xl rounded-tl-sm px-5 py-3 shadow-sm">
                       <div className="grid grid-cols-1 gap-4">
                         {m.allImageUrls.map((url, idx) => (
                           <img 
@@ -755,7 +755,7 @@ export default function HydrologyDarkChat() {
                           />
                         ))}
                       </div>
-                      <p className="text-xs text-gray-400 mt-2">Click any image to view full size</p>
+                      <p className="text-xs text-gray-500 mt-2">Click any image to view full size</p>
                     </div>
                   </div>
                 )}
@@ -765,12 +765,12 @@ export default function HydrologyDarkChat() {
                   <div className={`max-w-[85%] ${
                     m.role === 'user' 
                       ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl rounded-tr-sm' 
-                      : 'bg-black border border-gray-800 text-gray-100 rounded-2xl rounded-tl-sm'
+                      : 'bg-white border border-gray-300 text-gray-900 rounded-2xl rounded-tl-sm shadow-sm'
                   } px-5 py-3`}>
                     {m.text && <div className="whitespace-pre-wrap mb-4">{m.text}</div>}
                     <div className="relative">
                       <img src={m.imageUrl} alt="Result" className="rounded-lg w-full" />
-                      <a href={m.imageUrl} download target="_blank" rel="noopener noreferrer" title="Download map as PNG" className="absolute top-3 left-3 bg-black/70 hover:bg-black/90 text-white p-2 rounded-md transition-all backdrop-blur-sm border border-white/10 hover:border-white/20">
+                      <a href={m.imageUrl} download target="_blank" rel="noopener noreferrer" title="Download map as PNG" className="absolute top-3 left-3 bg-white/80 hover:bg-white text-gray-800 p-2 rounded-md transition-all backdrop-blur-sm border border-gray-300 hover:border-gray-400 shadow-sm">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                       </a>
                     </div>
@@ -790,10 +790,10 @@ export default function HydrologyDarkChat() {
             {/* Fallback loading indicator */}
             {loading && progressSteps.length === 0 && (
               <div className="flex justify-start">
-                <div className="bg-black border border-gray-800 rounded-2xl rounded-tl-sm px-5 py-3">
+                <div className="bg-white border border-gray-300 rounded-2xl rounded-tl-sm px-5 py-3 shadow-sm">
                   <div className="flex items-center space-x-3">
                     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-purple-500"></div>
-                    <span className="text-gray-300">Connecting to server...</span>
+                    <span className="text-gray-600">Connecting to server...</span>
                   </div>
                 </div>
               </div>
@@ -807,17 +807,17 @@ export default function HydrologyDarkChat() {
         <div className="fixed bottom-24 left-0 right-0 z-40">
           <div className="max-w-5xl mx-auto px-4 flex items-center gap-3">
             {userId && (
-              <div className="text-xs text-gray-500 px-3 py-1.5 bg-black border border-gray-800 rounded-lg">
+              <div className="text-xs text-gray-600 px-3 py-1.5 bg-white border border-gray-300 rounded-lg shadow-sm">
                 User: {userId.substring(0, 8)}
-                {messages.length > 0 && <span className="text-green-400 ml-2">● Active</span>}
-                {isStreaming && <span className="text-purple-400 ml-2">● Streaming</span>}
+                {messages.length > 0 && <span className="text-green-600 ml-2">● Active</span>}
+                {isStreaming && <span className="text-purple-600 ml-2">● Streaming</span>}
               </div>
             )}
 
             <button
               onClick={handleExportPDF}
               disabled={messages.length === 0 || exporting}
-              className="px-3 py-1.5 text-xs bg-black hover:bg-black text-gray-300 border border-gray-800 rounded-lg transition-all duration-200 hover:border-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 text-xs bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-lg transition-all duration-200 hover:border-gray-400 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
               title="Export conversation to PDF"
             >
               {exporting ? '⏳ Exporting...' : '📄 Export PDF'}
@@ -825,7 +825,7 @@ export default function HydrologyDarkChat() {
             
             <button
               onClick={handleNewConversation}
-              className="px-3 py-1.5 text-xs bg-black hover:bg-black text-gray-300 border border-gray-800 rounded-lg transition-all duration-200 hover:border-gray-700"
+              className="px-3 py-1.5 text-xs bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-lg transition-all duration-200 hover:border-gray-400 shadow-sm"
               title="Start fresh conversation"
             >
               📝 New Chat
@@ -833,7 +833,7 @@ export default function HydrologyDarkChat() {
             
             <button
               onClick={forceDebugLog}
-              className="px-3 py-1.5 text-xs bg-black hover:bg-black text-red-400 border border-gray-800 rounded-lg transition-all duration-200 hover:border-red-900"
+              className="px-3 py-1.5 text-xs bg-white hover:bg-red-50 text-red-600 border border-gray-300 rounded-lg transition-all duration-200 hover:border-red-300 shadow-sm"
               title="Toggle debug mode"
             >
               🔥 Debug
@@ -842,8 +842,8 @@ export default function HydrologyDarkChat() {
         </div>
 
         {/* Input form */}
-        <div className="fixed bottom-0 left-0 right-0 bg-black z-40">
-          <div className="max-w-5xl mx-auto border-t border-gray-800 pt-4 pb-4 px-4">
+        <div className="fixed bottom-0 left-0 right-0 bg-white z-40">
+          <div className="max-w-5xl mx-auto border-t border-gray-200 pt-4 pb-4 px-4">
             <form onSubmit={handleSubmit}>
               <div className="flex gap-3">
                 <input
@@ -851,7 +851,7 @@ export default function HydrologyDarkChat() {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Ask about hydrology data..."
-                  className="flex-1 px-5 py-3 bg-black border border-gray-800 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all duration-200"
+                  className="flex-1 px-5 py-3 bg-white border border-gray-300 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all duration-200"
                   disabled={loading || isStreaming}
                 />
                 <button
@@ -871,7 +871,7 @@ export default function HydrologyDarkChat() {
                 </button>
               </div>
               {error && (
-                <div className="mt-3 text-sm text-red-400 bg-black border border-red-800 rounded-lg px-4 py-2">
+                <div className="mt-3 text-sm text-red-600 bg-red-50 border border-red-300 rounded-lg px-4 py-2">
                   {error}
                 </div>
               )}
@@ -883,12 +883,12 @@ export default function HydrologyDarkChat() {
         {showDebug && debug && (
           <div className="fixed bottom-28 left-0 right-0 z-50">
             <div className="max-w-5xl mx-auto px-4">
-              <div className="p-4 bg-black border border-gray-800 rounded-lg">
+              <div className="p-4 bg-gray-50 border border-gray-300 rounded-lg shadow-lg">
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm text-gray-400">Debug Information</span>
-                  <button onClick={() => setShowDebug(false)} className="text-gray-500 hover:text-gray-300">✕</button>
+                  <span className="text-sm text-gray-600">Debug Information</span>
+                  <button onClick={() => setShowDebug(false)} className="text-gray-400 hover:text-gray-600">✕</button>
                 </div>
-                <pre className="text-xs text-gray-300 overflow-auto max-h-48">
+                <pre className="text-xs text-gray-700 overflow-auto max-h-48">
                   {JSON.stringify(debug, null, 2)}
                 </pre>
               </div>
@@ -899,11 +899,11 @@ export default function HydrologyDarkChat() {
 
       {/* PDF Export overlay */}
       {exporting && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[9999]">
-          <div className="bg-gray-900 border border-gray-700 rounded-2xl px-10 py-8 text-center">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[9999]">
+          <div className="bg-white border border-gray-300 rounded-2xl px-10 py-8 text-center shadow-xl">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-500 mx-auto mb-4"></div>
-            <p className="text-white text-lg font-medium">Exporting to PDF...</p>
-            <p className="text-gray-400 text-sm mt-2">Capturing maps and conversation</p>
+            <p className="text-gray-900 text-lg font-medium">Exporting to PDF...</p>
+            <p className="text-gray-500 text-sm mt-2">Capturing maps and conversation</p>
           </div>
         </div>
       )}
