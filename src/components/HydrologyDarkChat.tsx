@@ -370,7 +370,18 @@ export default function HydrologyDarkChat() {
   } {
     let cleanContent = ''
     
-    if (r?.analysis_data?.result && r?.analysis_data?.status !== 'error') {
+    // Priority 1: Use GPT-4o's text summary if it's meaningful
+    if (r?.content && typeof r.content === 'string' && 
+        r.content !== 'Analysis completed' && r.content.length > 30) {
+      cleanContent = r.content
+      console.log('📝 Using GPT-4o summary:', cleanContent.substring(0, 80))
+    }
+    // Priority 2: Use agent_response
+    else if (r?.agent_response) {
+      cleanContent = r.agent_response
+    }
+    // Priority 3: Format analysis_data as fallback
+    else if (r?.analysis_data?.result && r?.analysis_data?.status !== 'error') {
       const result = r.analysis_data.result
       if (typeof result === 'string') {
         const hasUrl = /https?:\/\/[^\s]+/.test(result)
@@ -381,8 +392,6 @@ export default function HydrologyDarkChat() {
         if (!isMapResult) { cleanContent = formatDataResult(result); console.log('📊 Formatted data result:', cleanContent) }
       }
     }
-    if (!cleanContent && r?.agent_response) cleanContent = r.agent_response
-    if (!cleanContent && r?.content) cleanContent = typeof r.content === 'string' ? r.content : ''
 
     if (typeof cleanContent === 'string') {
       cleanContent = cleanContent.replace(/\[.*?\]\(result\.[a-z_]+\)/gi, '')
